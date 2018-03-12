@@ -1,33 +1,3 @@
-# cifar10.py ---
-#
-# Filename: cifar10.py
-# Description:
-# Author: Kwang Moo Yi
-# Maintainer:
-# Created: Sun Jan 14 20:44:24 2018 (-0800)
-# Version:
-# Package-Requires: ()
-# URL:
-# Doc URL:
-# Keywords:
-# Compatibility:
-#
-#
-
-# Commentary:
-#
-#
-#
-#
-
-# Change Log:
-#
-#
-#
-# Copyright (C), Visual Computing Group @ University of Victoria.
-
-# Code:
-
 import os
 
 import numpy as np
@@ -64,12 +34,8 @@ def load_data(data_dir, data_type):
         for _i in range(5):
             file_name = os.path.join(data_dir, "data_batch_{}".format(_i + 1))
             cur_dict = unpickle(file_name)
-            data += [
-                np.array(cur_dict[b"data"])
-            ]
-            label += [
-                np.array(cur_dict[b"labels"])
-            ]
+            data += [np.array(cur_dict[b"data"])]
+            label += [np.array(cur_dict[b"labels"])]
         # Concat them
         data = np.concatenate(data)
         label = np.concatenate(label)

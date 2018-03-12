@@ -1,13 +1,11 @@
 import os
 
 import numpy as np
+
 import tensorflow as tf
-from tqdm import trange
-
 from config import get_config, print_usage
+from tqdm import trange
 from utils.cifar10 import load_data
-
-data_dir = "./cifar-10-batches-py"
 
 
 class MyNetwork(object):
@@ -33,7 +31,7 @@ class MyNetwork(object):
     def _build_placeholder(self):
         """Build placeholders."""
 
-        # TODO: Get shape for placeholder
+        # Get shape for placeholder
         x_in_shp = (None, self.x_shp[1], self.x_shp[2], self.x_shp[3])
 
         # Create Placeholders for inputs
@@ -44,7 +42,7 @@ class MyNetwork(object):
         """Build preprocessing related graph."""
 
         with tf.variable_scope("Normalization", reuse=tf.AUTO_REUSE):
-            # TODO: we will make `n_mean`, `n_range`, `n_mean_in` and
+            # we will make `n_mean`, `n_range`, `n_mean_in` and
             # `n_range_in` as scalar this time! This is how we often use in
             # CNNs, as we KNOW that these are image pixels, and all pixels
             # should be treated equally!
@@ -53,12 +51,13 @@ class MyNetwork(object):
             # easy save/load. Create these variables as well.
             self.n_mean_in = tf.placeholder(tf.float32, shape=())
             self.n_range_in = tf.placeholder(tf.float32, shape=())
+
             # Make the normalization as a TensorFlow variable. This is to make
             # sure we save it in the graph
-            self.n_mean = tf.get_variable(
-                "n_mean", shape=(), trainable=False)
+            self.n_mean = tf.get_variable("n_mean", shape=(), trainable=False)
             self.n_range = tf.get_variable(
                 "n_range", shape=(), trainable=False)
+
             # Assign op to store this value to TF variable
             self.n_assign_op = tf.group(
                 tf.assign(self.n_mean, self.n_mean_in),
@@ -77,13 +76,12 @@ class MyNetwork(object):
         #     kernel_initializer = tf.glorot_normal_initializer()
 
         # Build the network (use tf.layers)
-        
         """ We will probably put Darknet here"""
 
         # with tf.variable_scope("Network", reuse=tf.AUTO_REUSE):
         #     # Normalize using the above training-time statistics
         #     cur_in = (self.x_in - self.n_mean) / self.n_range
-        #     # TODO: Convolutional layer 0. Make output shape become 32 > 28 >
+        #     # Convolutional layer 0. Make output shape become 32 > 28 >
         #     # 14 as we do convolution and pooling. We will also use the
         #     # argument from the configuration to determine the number of
         #     # filters for the inital conv layer. Have `num_unit` of filters,
@@ -92,31 +90,31 @@ class MyNetwork(object):
         #     cur_in = tf.layers.conv2d(cur_in, num_unit, [5, 5], kernel_initializer=kernel_initializer)
         #     # Activation
         #     cur_in = activ(cur_in)
-        #     # TODO: use `tf.layers.max_pooling2d` to see how it should run. If
+        #     # use `tf.layers.max_pooling2d` to see how it should run. If
         #     # you want to try different pooling strategies, add it as another
         #     # config option. Be sure to have the max_pooling implemented.
         #     cur_in = tf.layers.max_pooling2d(cur_in, [2, 2], 2)
-        #     # TODO: double the number of filters we will use after pooling
+        #     # double the number of filters we will use after pooling
         #     num_unit *= 2
-        #     # TODO: Convolutional layer 1. Make output shape become 14 > 12 > 6
+        #     # Convolutional layer 1. Make output shape become 14 > 12 > 6
         #     # as we do convolution and pooling. Have `num_unit` of filters,
         #     # use the kernel_initializer above.
         #     cur_in = tf.layers.conv2d(cur_in, num_unit, [3, 3], kernel_initializer=kernel_initializer)
         #     # Activation
         #     cur_in = activ(cur_in)
-        #     # TODO: max pooling
+        #     # max pooling
         #     cur_in = tf.layers.max_pooling2d(cur_in, [2, 2], 2)
-        #     # TODO: double the number of filters we will use after pooling
+        #     # double the number of filters we will use after pooling
         #     num_unit *= 2
-        #     # TODO: Convolutional layer 2. Make output shape become 6 > 4 > 2
+        #     # Convolutional layer 2. Make output shape become 6 > 4 > 2
         #     # as we do convolution and pooling. Have `num_unit` of filters,
         #     # use the kernel_initializer above.
         #     cur_in = tf.layers.conv2d(cur_in, num_unit, [3, 3], kernel_initializer=kernel_initializer)
         #     # Activation
         #     cur_in = activ(cur_in)
-        #     # TODO: max pooling
+        #     # max pooling
         #     cur_in = tf.layers.max_pooling2d(cur_in, [2, 2], 2)
-        #     # TODO: Flatten to put into FC layer with `tf.layers.flatten`
+        #     # Flatten to put into FC layer with `tf.layers.flatten`
         #     cur_in = tf.layers.flatten(cur_in)
         #     # Hidden layers
         #     num_unit = self.config.num_unit
@@ -145,12 +143,11 @@ class MyNetwork(object):
             # Create cross entropy loss
             self.loss = tf.reduce_mean(
                 tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels=self.y_in, logits=self.logits)
-            )
+                    labels=self.y_in, logits=self.logits))
 
             # Create l2 regularizer loss and add
-            l2_loss = tf.add_n([
-                tf.reduce_sum(_v**2) for _v in self.kernels_list])
+            l2_loss = tf.add_n(
+                [tf.reduce_sum(_v**2) for _v in self.kernels_list])
             self.loss += self.config.reg_lambda * l2_loss
 
             # Record summary for loss
@@ -161,7 +158,8 @@ class MyNetwork(object):
 
         with tf.variable_scope("Optim", reuse=tf.AUTO_REUSE):
             self.global_step = tf.get_variable(
-                "global_step", shape=(),
+                "global_step",
+                shape=(),
                 initializer=tf.zeros_initializer(),
                 dtype=tf.int64,
                 trainable=False)
@@ -180,19 +178,20 @@ class MyNetwork(object):
             # your Ops are identical Ops.
             self.pred = tf.argmax(self.logits, axis=1)
             self.acc = tf.reduce_mean(
-                tf.to_float(tf.equal(self.pred, self.y_in))
-            )
+                tf.to_float(tf.equal(self.pred, self.y_in)))
 
             # Record summary for accuracy
             tf.summary.scalar("accuracy", self.acc)
 
-            # TODO: We also want to save best validation accuracy. So we do
+            # We also want to save best validation accuracy. So we do
             # something similar to what we did before with n_mean. Note that
             # these will also be a scalar variable
             self.best_va_acc_in = tf.placeholder(tf.float32)
-            self.best_va_acc = tf.get_variable("best_va_acc", dtype=tf.float32, shape=(), trainable=False)
-            # TODO: Assign op to store this value to TF variable
-            self.acc_assign_op = tf.assign(self.best_va_acc, self.best_va_acc_in)
+            self.best_va_acc = tf.get_variable(
+                "best_va_acc", dtype=tf.float32, shape=(), trainable=False)
+            # Assign op to store this value to TF variable
+            self.acc_assign_op = tf.assign(self.best_va_acc,
+                                           self.best_va_acc_in)
 
     def _build_summary(self):
         """Build summary ops."""
@@ -208,15 +207,16 @@ class MyNetwork(object):
             os.path.join(self.config.log_dir, "train"))
         self.summary_va = tf.summary.FileWriter(
             os.path.join(self.config.log_dir, "valid"))
+
         # Create savers (one for current, one for best)
         self.saver_cur = tf.train.Saver()
         self.saver_best = tf.train.Saver()
+
         # Save file for the current model
-        self.save_file_cur = os.path.join(
-            self.config.log_dir, "model")
+        self.save_file_cur = os.path.join(self.config.log_dir, "model")
+
         # Save file for the best model
-        self.save_file_best = os.path.join(
-            self.config.save_dir, "model")
+        self.save_file_best = os.path.join(self.config.save_dir, "model")
 
     def train(self, x_tr, y_tr, x_va, y_va):
         """Training function.
@@ -247,8 +247,7 @@ class MyNetwork(object):
 
         # Report data statistic
         print("Training data before: mean {}, std {}, min {}, max {}".format(
-            x_tr_mean, x_tr.std(), x_tr.min(), x_tr.max()
-        ))
+            x_tr_mean, x_tr.std(), x_tr.min(), x_tr.max()))
 
         # ----------------------------------------
         # Run TensorFlow Session
@@ -258,21 +257,24 @@ class MyNetwork(object):
             sess.run(tf.global_variables_initializer())
 
             # Assign normalization variables from statistics of the train data
-            sess.run(self.n_assign_op, feed_dict={
-                self.n_mean_in: x_tr_mean,
-                self.n_range_in: x_tr_range,
-            })
+            sess.run(
+                self.n_assign_op,
+                feed_dict={
+                    self.n_mean_in: x_tr_mean,
+                    self.n_range_in: x_tr_range,
+                })
 
-            # TODO: Check if previous train exists
+            # Check if previous train exists
             b_resume = tf.train.latest_checkpoint(self.config.log_dir)
             if b_resume:
-                # TODO: Restore network
-                print("Restoring from {}...".format(
-                    self.config.log_dir))
+                # Restore network
+                print("Restoring from {}...".format(self.config.log_dir))
                 self.saver_best.restore(sess, b_resume)
-                # TODO: restore number of steps so far
+
+                # restore number of steps so far
                 step = tf.train.load_variable(b_resume, "global_step")
-                # TODO: restore best acc
+
+                # restore best acc
                 best_acc = tf.train.load_variable(b_resume, "best_acc")
             else:
                 print("Starting from scratch...")
@@ -282,6 +284,7 @@ class MyNetwork(object):
             print("Training...")
             batch_size = config.batch_size
             max_iter = config.max_iter
+
             # For each epoch
             for step in trange(step, max_iter):
 
@@ -293,7 +296,7 @@ class MyNetwork(object):
                 x_b = np.array([x_tr[_i] for _i in ind_cur])
                 y_b = np.array([y_tr[_i] for _i in ind_cur])
 
-                # TODO: Write summary every N iterations as well as the first
+                # Write summary every N iterations as well as the first
                 # iteration. Use `self.config.report_freq`. Make sure that we
                 # write at the first iteration, and every kN iterations where k
                 # is an interger. HINT: we write the summary after we do the
@@ -319,26 +322,28 @@ class MyNetwork(object):
                     },
                 )
 
-                # TODO: Write Training Summary if we fetched it (don't write
+                # Write Training Summary if we fetched it (don't write
                 # meta graph). See that we actually don't need the above
                 # `b_write_summary` actually :-). I know that we can check this
                 # with b_write_summary, but let's check `res` to do this as an
                 # exercise.
                 if "summary" in res:
                     self.summary_tr.add_summary(
-                        res["summary"], global_step=res["global_step"],
+                        res["summary"],
+                        global_step=res["global_step"],
                     )
                     self.summary_tr.flush()
 
                     # Also save current model to resume when we write the
                     # summary.
                     self.saver_cur.save(
-                        sess, self.save_file_cur,
+                        sess,
+                        self.save_file_cur,
                         global_step=self.global_step,
                         write_meta_graph=False,
                     )
 
-                # TODO: Validate every N iterations and at the first
+                # Validate every N iterations and at the first
                 # iteration. Use `self.config.val_freq`. Make sure that we
                 # validate at the correct iterations. HINT: should be similar
                 # to above.
@@ -356,7 +361,8 @@ class MyNetwork(object):
                         })
                     # Write Validation Summary
                     self.summary_va.add_summary(
-                        res["summary"], global_step=res["global_step"],
+                        res["summary"],
+                        global_step=res["global_step"],
                     )
                     self.summary_va.flush()
 
@@ -364,18 +370,16 @@ class MyNetwork(object):
                     # best accuracy. We will only return the best W and b
                     if res["acc"] > best_acc:
                         best_acc = res["acc"]
-                        # TODO: Write best acc to TF variable
+                        # Write best acc to TF variable
                         sess.run(
-                            fetches={
-                                "best_acc": self.acc_assign_op
-                            },
+                            fetches={"best_acc": self.acc_assign_op},
                             feed_dict={
                                 self.best_va_acc_in: best_acc
-                            }
-                        )
+                            })
                         # Save the best model
                         self.saver_best.save(
-                            sess, self.save_file_best,
+                            sess,
+                            self.save_file_best,
                             write_meta_graph=False,
                         )
 
@@ -387,12 +391,8 @@ class MyNetwork(object):
             latest_checkpoint = tf.train.latest_checkpoint(
                 self.config.save_dir)
             if tf.train.latest_checkpoint(self.config.save_dir) is not None:
-                print("Restoring from {}...".format(
-                    self.config.save_dir))
-                self.saver_best.restore(
-                    sess,
-                    latest_checkpoint
-                )
+                print("Restoring from {}...".format(self.config.save_dir))
+                self.saver_best.restore(sess, latest_checkpoint)
 
             # Test on the test data
             res = sess.run(
@@ -406,8 +406,7 @@ class MyNetwork(object):
             )
 
             # Report (print) test result
-            print("Test accuracy with the best model is {}".format(
-                res["acc"]))
+            print("Test accuracy with the best model is {}".format(res["acc"]))
 
 
 def main(config):
@@ -475,5 +474,3 @@ if __name__ == "__main__":
         exit(1)
 
     main(config)
-
-
