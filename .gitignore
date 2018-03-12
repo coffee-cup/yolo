@@ -271,9 +271,4 @@ $RECYCLE.BIN/
 # Python Virtualenv
 .myenv
 
-<<<<<<< HEAD
-VOCdevkit
-=======
-# Dataset
 VOC*/
->>>>>>> b481f68ebf599eeb750f06d70f1ec1ccecc3e7d3
