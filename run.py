@@ -65,6 +65,13 @@ class MyNetwork(object):
             )
 
     def _build_model(self):
+        """
+
+            Arguments required for darknet:
+            net, classes, num_anchors, training=False, center=True
+            
+        """
+
         def batch_norm(net):
             net = slim.batch_norm(net, center=center, scale=True, epsilon=1e-5, is_training=training)
             if not center:
