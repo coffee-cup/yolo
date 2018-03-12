@@ -1,11 +1,14 @@
 import os
+import inspect
 
 import numpy as np
 
 import tensorflow as tf
+import tensorflow.contrib.slim as slim
 from config import get_config, print_usage
 from tqdm import trange
 from utils.cifar10 import load_data
+
 
 
 class MyNetwork(object):
