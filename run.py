@@ -1,11 +1,14 @@
 import os
+import inspect
 
 import numpy as np
 
 import tensorflow as tf
+import tensorflow.contrib.slim as slim
 from config import get_config, print_usage
 from tqdm import trange
 from utils.cifar10 import load_data
+
 
 
 class MyNetwork(object):
@@ -63,77 +66,90 @@ class MyNetwork(object):
                 tf.assign(self.n_mean, self.n_mean_in),
                 tf.assign(self.n_range, self.n_range_in),
             )
-
+    
     def _build_model(self):
-        """We're probably going to put darknet in here..."""
+        """
 
-        # Initializer and activations
-        # if self.config.activ_type == "relu":
-        #     activ = tf.nn.relu
-        #     kernel_initializer = tf.keras.initializers.he_normal()
-        # elif self.config.activ_type == "tanh":
-        #     activ = tf.nn.tanh
-        #     kernel_initializer = tf.glorot_normal_initializer()
+            Arguments required for darknet :
+            net, classes, num_anchors, training=False, center=True
+            
+        """
 
-        # Build the network (use tf.layers)
-        """ We will probably put Darknet here"""
+        def reorg(net, stride=2, name='reorg'):
+            batch_size, height, width, channels = net.get_shape().as_list()
+            _height, _width, _channel = height // stride, width // stride, channels * stride * stride
+            with tf.name_scope(name) as name:
+                net = tf.reshape(net, [batch_size, _height, stride, _width, stride, channels])
+                net = tf.transpose(net, [0, 1, 3, 2, 4, 5]) # batch_size, _height, _width, stride, stride, channels
+                net = tf.reshape(net, [batch_size, _height, _width, -1], name=name)
+        return net
 
-        # with tf.variable_scope("Network", reuse=tf.AUTO_REUSE):
-        #     # Normalize using the above training-time statistics
-        #     cur_in = (self.x_in - self.n_mean) / self.n_range
-        #     # Convolutional layer 0. Make output shape become 32 > 28 >
-        #     # 14 as we do convolution and pooling. We will also use the
-        #     # argument from the configuration to determine the number of
-        #     # filters for the inital conv layer. Have `num_unit` of filters,
-        #     # use the kernel_initializer above.
-        #     num_unit = self.config.num_conv_base
-        #     cur_in = tf.layers.conv2d(cur_in, num_unit, [5, 5], kernel_initializer=kernel_initializer)
-        #     # Activation
-        #     cur_in = activ(cur_in)
-        #     # use `tf.layers.max_pooling2d` to see how it should run. If
-        #     # you want to try different pooling strategies, add it as another
-        #     # config option. Be sure to have the max_pooling implemented.
-        #     cur_in = tf.layers.max_pooling2d(cur_in, [2, 2], 2)
-        #     # double the number of filters we will use after pooling
-        #     num_unit *= 2
-        #     # Convolutional layer 1. Make output shape become 14 > 12 > 6
-        #     # as we do convolution and pooling. Have `num_unit` of filters,
-        #     # use the kernel_initializer above.
-        #     cur_in = tf.layers.conv2d(cur_in, num_unit, [3, 3], kernel_initializer=kernel_initializer)
-        #     # Activation
-        #     cur_in = activ(cur_in)
-        #     # max pooling
-        #     cur_in = tf.layers.max_pooling2d(cur_in, [2, 2], 2)
-        #     # double the number of filters we will use after pooling
-        #     num_unit *= 2
-        #     # Convolutional layer 2. Make output shape become 6 > 4 > 2
-        #     # as we do convolution and pooling. Have `num_unit` of filters,
-        #     # use the kernel_initializer above.
-        #     cur_in = tf.layers.conv2d(cur_in, num_unit, [3, 3], kernel_initializer=kernel_initializer)
-        #     # Activation
-        #     cur_in = activ(cur_in)
-        #     # max pooling
-        #     cur_in = tf.layers.max_pooling2d(cur_in, [2, 2], 2)
-        #     # Flatten to put into FC layer with `tf.layers.flatten`
-        #     cur_in = tf.layers.flatten(cur_in)
-        #     # Hidden layers
-        #     num_unit = self.config.num_unit
-        #     for _i in range(self.config.num_hidden):
-        #         cur_in = tf.layers.dense(
-        #             cur_in, num_unit, kernel_initializer=kernel_initializer)
-        #         if self.config.activ_type == "relu":
-        #             cur_in = tf.nn.relu(cur_in)
-        #         elif self.config.activ_type == "tanh":
-        #             cur_in = tf.nn.tanh(cur_in)
-        #     # Output layer
-        #     self.logits = tf.layers.dense(
-        #         cur_in, self.config.num_class,
-        #         kernel_initializer=kernel_initializer)
+        
+        def leaky_relu(inputs, alpha=.1):
+            with tf.name_scope('leaky_relu') as name:
+                data = tf.identity(inputs, name='data')
+                return tf.maximum(data, alpha * data, name=name)
 
-        #     # Get list of all weights in this scope. They are called "kernel"
-        #     # in tf.layers.dense.
-        #     self.kernels_list = [
-        #         _v for _v in tf.trainable_variables() if "kernel" in _v.name]
+        def batch_norm(net):
+            net = slim.batch_norm(net, center=center, scale=True, epsilon=1e-5, is_training=training)
+            if not center:
+                net = tf.nn.bias_add(net, slim.variable('biases', shape=[tf.shape(net)[-1]], initializer=tf.zeros_initializer()))
+            return net
+
+        scope = __name__.split('.')[-2] + '_' + inspect.stack()[0][3]
+        net = tf.identity(net, name='%s/input' % scope)
+        with slim.arg_scope([slim.layers.conv2d], kernel_size=[3, 3], normalizer_fn=batch_norm, activation_fn=leaky_relu), slim.arg_scope([slim.layers.max_pool2d], kernel_size=[2, 2], padding='SAME'):
+            index = 0
+            channels = 32
+            for _ in range(2):
+                net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+                net = slim.layers.max_pool2d(net, scope='%s/max_pool%d' % (scope, index))
+                index += 1
+                channels *= 2
+            for _ in range(2):
+                net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+                index += 1
+                net = slim.layers.conv2d(net, channels / 2, kernel_size=[1, 1], scope='%s/conv%d' % (scope, index))
+                index += 1
+                net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+                net = slim.layers.max_pool2d(net, scope='%s/max_pool%d' % (scope, index))
+                index += 1
+                channels *= 2
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels / 2, kernel_size=[1, 1], scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels / 2, kernel_size=[1, 1], scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            passthrough = tf.identity(net, name=scope + '/passthrough')
+            net = slim.layers.max_pool2d(net, scope='%s/max_pool%d' % (scope, index))
+            index += 1
+            channels *= 2
+            # downsampling finished
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels / 2, kernel_size=[1, 1], scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels / 2, kernel_size=[1, 1], scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+            index += 1
+            with tf.name_scope(scope):
+                _net = reorg(passthrough)
+            net = tf.concat([_net, net], 3, name='%s/concat%d' % (scope, index))
+            net = slim.layers.conv2d(net, channels, scope='%s/conv%d' % (scope, index))
+        net = slim.layers.conv2d(net, num_anchors * (5 + classes), kernel_size=[1, 1], activation_fn=None, scope='%s/conv' % scope)
+        net = tf.identity(net, name='%s/output' % scope)
+        return scope, net
 
     def _build_loss(self):
         """Build our cross entropy loss."""
