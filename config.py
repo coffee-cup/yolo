@@ -48,8 +48,7 @@ dataset_arg.add_argument(
     choices=["VOC2007", "VOC2012", "merged"],
     help="Desired challenge year")
 
-dataset_arg.add_argument(
-    "--output_path", type=str, default="data/pascal.record")
+dataset_arg.add_argument("--output_path", type=str, default="pascal.record")
 
 # ----------------------------------------
 # Arguments for training
@@ -58,8 +57,10 @@ train_arg = add_argument_group("Training")
 train_arg.add_argument(
     "--record_file",
     type=str,
-    default="./pascal.record",
-    help="File for the Pascal VOC data")
+    default="./pascal_{}.record",
+    help=
+    "File for the Pascal VOC data. Expects {} to be in the name so it can be formatted with the split type"
+)
 
 train_arg.add_argument(
     "--learning_rate",

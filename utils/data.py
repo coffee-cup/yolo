@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-from utils import voc_common
+from utils import pascal_tf_record, voc_common
 
 ITEMS_TO_DESCRIPTIONS = {
     'image': 'A color image of varying height and width.',
@@ -11,50 +11,36 @@ ITEMS_TO_DESCRIPTIONS = {
     'object/label': 'A list of labels, one per each object.',
 }
 
-# (Images, Objects) statistics on every class.
-TRAIN_STATISTICS = {
-    'none': (0, 0),
-    'aeroplane': (670, 865),
-    'bicycle': (552, 711),
-    'bird': (765, 1119),
-    'boat': (508, 850),
-    'bottle': (706, 1259),
-    'bus': (421, 593),
-    'car': (1161, 2017),
-    'cat': (1080, 1217),
-    'chair': (1119, 2354),
-    'cow': (303, 588),
-    'diningtable': (538, 609),
-    'dog': (1286, 1515),
-    'horse': (482, 710),
-    'motorbike': (526, 713),
-    'person': (4087, 8566),
-    'pottedplant': (527, 973),
-    'sheep': (325, 813),
-    'sofa': (507, 566),
-    'train': (544, 628),
-    'tvmonitor': (575, 784),
-    'total': (11540, 27450),
-}
-
 SPLITS_TO_SIZES = {
-    'train': 11540,
-}
-
-SPLITS_TO_STATISTICS = {
-    'train': TRAIN_STATISTICS,
+    'train': 5717,
+    'val': 5823,
+    'trainval': 11540,
 }
 
 NUM_CLASSES = 20
 
 
-def load_data(record_path, split_name):
+def tf_record_exist(record_file):
+    """Returns whether or not the tf record file exists"""
+    return os.path.exists(record_file)
+
+
+def load_data(data_dir, record_file, year, annotations_dir, split_name):
     """Function to load data from CIFAR10.
 
     Parameters
     ----------
-    record_path : string
-        Path to the tf.Record path containing the data
+    data_dir : string
+        Path to directory containing pascal voc data
+
+    record_file : string
+        Path to the tf.record path containing the data
+
+    year : string
+        Year we want from the pascal voc data (2012)
+
+    annotations_dir : string
+         Relative directory to data_dir of image annotation xml files
 
     split_name : string
         "trainval", "train", "val", or "test"
@@ -63,7 +49,13 @@ def load_data(record_path, split_name):
     -------
         A `Dataset` namedtuple.
     """
-    dataset = voc_common.get_split(split_name, record_path, SPLITS_TO_SIZES,
-                                   ITEMS_TO_DESCRIPTIONS, NUM_CLASSES)
 
-    return dataset
+    record_file = record_file.format(split_name)
+
+    # If record file does not exists, create it
+    if not tf_record_exist(record_file):
+        pascal_tf_record.create_record_file(data_dir, record_file, year,
+                                            split_name, annotations_dir)
+
+    return voc_common.get_split(split_name, record_file, SPLITS_TO_SIZES,
+                                ITEMS_TO_DESCRIPTIONS, NUM_CLASSES)

@@ -7,7 +7,7 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from config import get_config, print_usage
 from tqdm import trange
-from utils.cifar10 import load_data
+from utils.data import load_data
 
 
 class MyNetwork(object):
@@ -507,54 +507,31 @@ def main(config):
     """The main function."""
 
     # ----------------------------------------
-    # Load cifar10 train data
-    print("Reading training data...")
-    data_trva, y_trva = load_data(config.data_dir, "train")
+    # Load pascal voc datasets
+    print("\n--- Reading PASCAL {} data".format(config.year))
 
-    # ----------------------------------------
-    # Load cifar10 test data
-    print("Reading test data...")
-    data_te, y_te = load_data(config.data_dir, "test")
+    dataset_train = load_data(config.data_dir, config.record_file, config.year,
+                              config.annotations_dir, 'train')
+    dataset_val = load_data(config.data_dir, config.record_file, config.year,
+                            config.annotations_dir, 'val')
 
-    # ----------------------------------------
-    # Extract features
-    # We now simply use raw images
-    print("Using raw images...")
-    x_trva = data_trva.astype(float)
-    x_te = data_te.astype(float)
+    print(dataset_train)
+    print(dataset_val)
 
-    # Randomly shuffle data and labels. IMPORANT: make sure the data and label
-    # is shuffled with the same random indices so that they don't get mixed up!
-    idx_shuffle = np.random.permutation(len(x_trva))
-    x_trva = x_trva[idx_shuffle]
-    y_trva = y_trva[idx_shuffle]
-
-    # Change type to float32 and int64 since we are going to use that for
-    # TensorFlow.
-    x_trva = x_trva.astype("float32")
-    y_trva = y_trva.astype("int64")
-
-    # ----------------------------------------
-    # Simply select the last 20% of the training data as validation dataset.
-    num_tr = int(len(x_trva) * 0.8)
-
-    x_tr = x_trva[:num_tr]
-    x_va = x_trva[num_tr:]
-    y_tr = y_trva[:num_tr]
-    y_va = y_trva[num_tr:]
+    return
 
     # ----------------------------------------
     # Init network class
-    mynet = MyNetwork(x_tr.shape, config)
+    # mynet = MyNetwork(x_tr.shape, config)
 
     # ----------------------------------------
     # Train
     # Run training
-    mynet.train(x_tr, y_tr, x_va, y_va)
+    # mynet.train(x_tr, y_tr, x_va, y_va)
 
     # ----------------------------------------
     # Test
-    mynet.test(x_te, y_te)
+    # mynet.test(x_te, y_te)
 
 
 if __name__ == "__main__":

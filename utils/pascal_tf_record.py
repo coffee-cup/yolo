@@ -42,9 +42,9 @@ slim = tf.contrib.slim
 VOC_LABELS = voc_common.VOC_LABELS
 
 
-def dict_to_tf_example(data,
-                       dataset_directory,
-                       image_subdirectory='JPEGImages'):
+def _dict_to_tf_example(data,
+                        dataset_directory,
+                        image_subdirectory='JPEGImages'):
     """Convert XML derived dict to tf.Example proto.
 
     Notice that this function normalizes the bounding box coordinates provided
@@ -151,20 +151,22 @@ def dict_to_tf_example(data,
     return tf.train.Example(features=tf.train.Features(feature=features))
 
 
-def main(config):
+def create_record_file(data_dir, output_file, year, split_name,
+                       annotations_dir):
     years = ['VOC2007', 'VOC2012']
-    if config.year != 'merged':
-        years = [config.year]
+    if year != 'merged':
+        years = [year]
 
     # Create tf.Record writer
-    writer = tf.python_io.TFRecordWriter(config.output_path)
+    writer = tf.python_io.TFRecordWriter(output_file)
 
     for year in years:
-        print('Reading from PASCAL {} dataset.'.format(year))
-        examples_path = os.path.join(config.data_dir, year, 'ImageSets',
-                                     'Main', config.set + '.txt')
-        annotations_dir = os.path.join(config.data_dir, year,
-                                       config.annotations_dir)
+        print('Creating TFRecord file from PASCAL {} {} dataset'.format(
+            year, split_name))
+
+        examples_path = os.path.join(data_dir, year, 'ImageSets', 'Main',
+                                     split_name + '.txt')
+        annotations_dir = os.path.join(data_dir, year, annotations_dir)
         examples_list = dataset_util.read_examples_list(examples_path)
 
         for idx in trange(0, len(examples_list)):
@@ -178,11 +180,11 @@ def main(config):
             data = dataset_util.recursive_parse_xml_to_dict(xml)['annotation']
 
             # Create tf.Example and add to tf.Record
-            tf_example = dict_to_tf_example(data, config.data_dir)
+            tf_example = _dict_to_tf_example(data, data_dir)
             writer.write(tf_example.SerializeToString())
 
     writer.close()
-    print('Saved tf Record to {}'.format(config.output_path))
+    print('Saved tf Record to {}\n'.format(output_file))
 
 
 if __name__ == '__main__':
