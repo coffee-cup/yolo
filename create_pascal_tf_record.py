@@ -24,15 +24,15 @@ from __future__ import absolute_import, division, print_function
 
 import hashlib
 import io
-import logging
 import os
 
 import PIL.Image
 from lxml import etree
 
-import dataset_util
 import tensorflow as tf
 from config import get_config, print_usage
+from tqdm import trange
+from utils import dataset_util
 
 slim = tf.contrib.slim
 
@@ -114,13 +114,13 @@ def dict_to_tf_example(data,
     for obj in data['object']:
 
         # Difficulty
-        if obj.find('difficult'):
-            difficult.append(int(obj.find('difficult').text))
+        if obj.get('difficult'):
+            difficult.append(int(obj.get('difficult')))
         else:
             difficult.append(0)
 
-        if obj.find('truncated'):
-            truncated.append(int(obj.find('truncated').text))
+        if obj.get('truncated'):
+            truncated.append(int(obj.get('truncated')))
         else:
             truncated.append(0)
 
@@ -131,15 +131,8 @@ def dict_to_tf_example(data,
         ymax.append(float(obj['bndbox']['ymax']) / height)
 
         # Classes
-        label = obj.find('name').text
-        classes.append(int(VOC_LABELS[label][0]))
-        classes_text.append(label)
-
+        classes.append(int(VOC_LABELS[obj['name']][0]))
         classes_text.append(obj['name'].encode('utf8'))
-        classes.append(class_text_to_int(obj['name']))
-        truncated.append(int(obj['truncated']))
-
-    print('-- Adding class {}'.format(classes_text))
 
     features = {
         'image/filename':
@@ -157,9 +150,11 @@ def dict_to_tf_example(data,
         'image/source_id':
         dataset_util.bytes_feature(data['filename'].encode('utf8')),
         'image/object/difficult':
-        dataset_util.int64_list_feature(difficult_obj),
+        dataset_util.int64_list_feature(difficult),
         'image/object/truncated':
         dataset_util.int64_list_feature(truncated),
+
+        # Classes
         'image/object/class/text':
         dataset_util.bytes_list_feature(classes_text),
         'image/object/class/label':
@@ -184,23 +179,28 @@ def main(config):
     if config.year != 'merged':
         years = [config.year]
 
+    # Create tf.Record writer
     writer = tf.python_io.TFRecordWriter(config.output_path)
 
     for year in years:
-        logging.info('Reading from PASCAL %s dataset.', year)
+        print('Reading from PASCAL {} dataset.'.format(year))
         examples_path = os.path.join(config.data_dir, year, 'ImageSets',
                                      'Main', config.set + '.txt')
-        annotations_dir = os.path.join(data_dir, year, config.annotations_dir)
+        annotations_dir = os.path.join(config.data_dir, year,
+                                       config.annotations_dir)
         examples_list = dataset_util.read_examples_list(examples_path)
-        for idx, example in enumerate(examples_list):
-            if idx % 100 == 0:
-                logging.info('On image %d of %d', idx, len(examples_list))
+
+        for idx in trange(0, len(examples_list)):
+            example = examples_list[idx]
+
+            # Find and parse annotation xml file
             path = os.path.join(annotations_dir, example + '.xml')
             with tf.gfile.GFile(path, 'r') as fid:
                 xml_str = fid.read()
             xml = etree.fromstring(xml_str)
             data = dataset_util.recursive_parse_xml_to_dict(xml)['annotation']
 
+            # Create tf.Example and add to tf.Record
             tf_example = dict_to_tf_example(data, config.data_dir)
             writer.write(tf_example.SerializeToString())
 
@@ -213,3 +213,5 @@ if __name__ == '__main__':
     if len(unparsed) > 0:
         print_usage()
         exit(1)
+
+    main(config)
