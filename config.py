@@ -19,14 +19,47 @@ def add_argument_group(name):
 
 
 # ----------------------------------------
+# Arguments for creating the dataset from pascal voc data
+dataset_arg = add_argument_group("Dataset")
+
+dataset_arg.add_argument(
+    "--data_dir",
+    type=str,
+    default="VOCdevkit",
+    help="Root directory to raw PACAL VOC dataset.")
+
+dataset_arg.add_argument(
+    "--set",
+    type=str,
+    default="trainval",
+    choices=["train", "val", "trainval", "test"],
+    help="Type of data to convert")
+
+dataset_arg.add_argument(
+    "--annotations_dir",
+    type=str,
+    default="Annotations",
+    help="(Relative) path to annotations directory.")
+
+dataset_arg.add_argument(
+    "--year",
+    type=str,
+    default="VOC2012",
+    choices=["VOC2007", "VOC2012", "merged"],
+    help="Desired challenge year")
+
+dataset_arg.add_argument(
+    "--output_path", type=str, default="data/pascal.record")
+
+# ----------------------------------------
 # Arguments for training
 train_arg = add_argument_group("Training")
 
 train_arg.add_argument(
-    "--data_dir",
+    "--record_file",
     type=str,
-    default="./cifar-10-batches-py",
-    help="Directory with CIFAR10 data")
+    default="./pascal.record",
+    help="File for the Pascal VOC data")
 
 train_arg.add_argument(
     "--learning_rate",
