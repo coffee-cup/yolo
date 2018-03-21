@@ -32,33 +32,14 @@ from lxml import etree
 import tensorflow as tf
 from config import get_config, print_usage
 from tqdm import trange
-from utils import dataset_util
+from utils import dataset_util, voc_common
+from utils.dataset_util import (bytes_feature, bytes_list_feature,
+                                float_list_feature, int64_feature,
+                                int64_list_feature)
 
 slim = tf.contrib.slim
 
-VOC_LABELS = {
-    'none': (0, 'Background'),
-    'aeroplane': (1, 'Vehicle'),
-    'bicycle': (2, 'Vehicle'),
-    'bird': (3, 'Animal'),
-    'boat': (4, 'Vehicle'),
-    'bottle': (5, 'Indoor'),
-    'bus': (6, 'Vehicle'),
-    'car': (7, 'Vehicle'),
-    'cat': (8, 'Animal'),
-    'chair': (9, 'Indoor'),
-    'cow': (10, 'Animal'),
-    'diningtable': (11, 'Indoor'),
-    'dog': (12, 'Animal'),
-    'horse': (13, 'Animal'),
-    'motorbike': (14, 'Vehicle'),
-    'person': (15, 'Person'),
-    'pottedplant': (16, 'Indoor'),
-    'sheep': (17, 'Animal'),
-    'sofa': (18, 'Indoor'),
-    'train': (19, 'Vehicle'),
-    'tvmonitor': (20, 'Indoor'),
-}
+VOC_LABELS = voc_common.VOC_LABELS
 
 
 def dict_to_tf_example(data,
@@ -71,7 +52,7 @@ def dict_to_tf_example(data,
 
     Args:
         data: dict holding PASCAL XML fields for a single image (obtained by
-        running dataset_util.recursive_parse_xml_to_dict)
+        running recursive_parse_xml_to_dict)
         dataset_directory: Path to root directory holding PASCAL dataset
 
         image_subdirectory: String specifying subdirectory within the
@@ -100,6 +81,8 @@ def dict_to_tf_example(data,
 
     width = int(data['size']['width'])
     height = int(data['size']['height'])
+    depth = int(data['size']['depth'])
+    shape = [height, width, depth]
 
     xmin = []
     ymin = []
@@ -112,12 +95,14 @@ def dict_to_tf_example(data,
 
     # For each detection in the image
     for obj in data['object']:
+        difficult_b = bool(int(obj['difficult']))
+
+        # Ignore difficult objects for now
+        if difficult_b:
+            continue
 
         # Difficulty
-        if obj.get('difficult'):
-            difficult.append(int(obj.get('difficult')))
-        else:
-            difficult.append(0)
+        difficult.append(int(difficult_b))
 
         if obj.get('truncated'):
             truncated.append(int(obj.get('truncated')))
@@ -135,40 +120,32 @@ def dict_to_tf_example(data,
         classes_text.append(obj['name'].encode('utf8'))
 
     features = {
-        'image/filename':
-        dataset_util.bytes_feature(data['filename'].encode('utf8')),
-        'image/encoded':
-        dataset_util.bytes_feature(encoded_jpg),
-        'image/format':
-        dataset_util.bytes_feature('jpeg'.encode('utf8')),
-        'image/width':
-        dataset_util.int64_feature(width),
-        'image/height':
-        dataset_util.int64_feature(height),
-        'image/key/sha256':
-        dataset_util.bytes_feature(key.encode('utf8')),
-        'image/source_id':
-        dataset_util.bytes_feature(data['filename'].encode('utf8')),
-        'image/object/difficult':
-        dataset_util.int64_list_feature(difficult),
-        'image/object/truncated':
-        dataset_util.int64_list_feature(truncated),
+        # Image file
+        'image/filename': bytes_feature(data['filename'].encode('utf8')),
+        'image/encoded': bytes_feature(encoded_jpg),
+        'image/format': bytes_feature('jpeg'.encode('utf8')),
+        'image/key/sha256': bytes_feature(key.encode('utf8')),
+        'image/source_id': bytes_feature(data['filename'].encode('utf8')),
+
+        # Image features
+        'image/width': int64_feature(width),
+        'image/height': int64_feature(height),
+        'image/channels': int64_feature(depth),
+        'image/shape': int64_list_feature(shape),
+
+        # Detection features
+        'image/object/difficult': int64_list_feature(difficult),
+        'image/object/truncated': int64_list_feature(truncated),
 
         # Classes
-        'image/object/class/text':
-        dataset_util.bytes_list_feature(classes_text),
-        'image/object/class/label':
-        dataset_util.int64_list_feature(classes),
+        'image/object/class/text': bytes_list_feature(classes_text),
+        'image/object/class/label': int64_list_feature(classes),
 
         # Bounding box
-        'image/object/bbox/xmin':
-        dataset_util.float_list_feature(xmin),
-        'image/object/bbox/xmax':
-        dataset_util.float_list_feature(xmax),
-        'image/object/bbox/ymin':
-        dataset_util.float_list_feature(ymin),
-        'image/object/bbox/ymax':
-        dataset_util.float_list_feature(ymax),
+        'image/object/bbox/xmin': float_list_feature(xmin),
+        'image/object/bbox/xmax': float_list_feature(xmax),
+        'image/object/bbox/ymin': float_list_feature(ymin),
+        'image/object/bbox/ymax': float_list_feature(ymax),
     }
 
     return tf.train.Example(features=tf.train.Features(feature=features))
@@ -205,6 +182,7 @@ def main(config):
             writer.write(tf_example.SerializeToString())
 
     writer.close()
+    print('Saved tf Record to {}'.format(config.output_path))
 
 
 if __name__ == '__main__':
