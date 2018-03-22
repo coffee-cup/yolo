@@ -66,7 +66,7 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         'image/object/bbox/truncated': tf.VarLenFeature(dtype=tf.int64),
 
         # Classes
-        'image/object/bbox/label': tf.VarLenFeature(dtype=tf.int64),
+        'image/object/class/label': tf.VarLenFeature(dtype=tf.int64),
 
         # Bounding box
         'image/object/bbox/xmin': tf.VarLenFeature(dtype=tf.float32),

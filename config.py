@@ -36,12 +36,6 @@ dataset_arg.add_argument(
     help="Type of data to convert")
 
 dataset_arg.add_argument(
-    "--annotations_dir",
-    type=str,
-    default="Annotations",
-    help="(Relative) path to annotations directory.")
-
-dataset_arg.add_argument(
     "--year",
     type=str,
     default="VOC2012",
@@ -69,7 +63,7 @@ train_arg.add_argument(
     help="Learning rate (gradient step size)")
 
 train_arg.add_argument(
-    "--batch_size", type=int, default=100, help="Size of each training batch")
+    "--batch_size", type=int, default=32, help="Size of each training batch")
 
 train_arg.add_argument(
     "--max_iter", type=int, default=5000, help="Number of iterations to train")

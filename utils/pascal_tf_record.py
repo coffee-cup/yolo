@@ -151,8 +151,7 @@ def _dict_to_tf_example(data,
     return tf.train.Example(features=tf.train.Features(feature=features))
 
 
-def create_record_file(data_dir, output_file, year, split_name,
-                       annotations_dir):
+def create_record_file(data_dir, output_file, year, split_name):
     years = ['VOC2007', 'VOC2012']
     if year != 'merged':
         years = [year]
@@ -166,7 +165,7 @@ def create_record_file(data_dir, output_file, year, split_name,
 
         examples_path = os.path.join(data_dir, year, 'ImageSets', 'Main',
                                      split_name + '.txt')
-        annotations_dir = os.path.join(data_dir, year, annotations_dir)
+        annotations_dir = os.path.join(data_dir, year, 'Annotations')
         examples_list = dataset_util.read_examples_list(examples_path)
 
         for idx in trange(0, len(examples_list)):

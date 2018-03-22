@@ -25,7 +25,7 @@ def tf_record_exist(record_file):
     return os.path.exists(record_file)
 
 
-def load_data(data_dir, record_file, year, annotations_dir, split_name):
+def load_data(data_dir, record_file, year, split_name):
     """Function to load data from CIFAR10.
 
     Parameters
@@ -55,7 +55,7 @@ def load_data(data_dir, record_file, year, annotations_dir, split_name):
     # If record file does not exists, create it
     if not tf_record_exist(record_file):
         pascal_tf_record.create_record_file(data_dir, record_file, year,
-                                            split_name, annotations_dir)
+                                            split_name)
 
     return voc_common.get_split(split_name, record_file, SPLITS_TO_SIZES,
                                 ITEMS_TO_DESCRIPTIONS, NUM_CLASSES)
