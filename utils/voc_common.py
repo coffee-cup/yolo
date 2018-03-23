@@ -73,6 +73,7 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         'image/object/bbox/ymin': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/xmax': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/ymax': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/count': tf.FixedLenFeature([], tf.int64)
     }
 
     items_to_handlers = {
@@ -85,6 +86,8 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
                                            'image/object/bbox/'),
         'object/label':
         slim.tfexample_decoder.Tensor('image/object/class/label'),
+        'object/count':
+        slim.tfexample_decoder.Tensor('image/object/count')
     }
 
     decoder = slim.tfexample_decoder.TFExampleDecoder(keys_to_features,

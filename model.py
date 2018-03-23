@@ -4,6 +4,7 @@ import numpy as np
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
+from tqdm import trange
 from utils.preprocess import preprocess_for_train
 
 
@@ -77,33 +78,53 @@ class Yolo(object):
             provider = slim.dataset_data_provider.DatasetDataProvider(
                 dataset_train, num_readers=1, shuffle=True)
 
-            [images, shape, labels, bboxes] = provider.get(
-                ['image', 'shape', 'object/label', 'object/bbox'])
+            [image, shape, labels, bboxes, object_count] = provider.get([
+                'image', 'shape', 'object/label', 'object/bbox', 'object/count'
+            ])
+
+            # object_count = tf.cast(object_count, tf.int32)
+            # bboxes_shape = tf.parallel_stack([object_count, 4])
+            # bboxes = tf.reshape(bboxes, bboxes_shape)
+
+            # Force the variable number of bounding boxes into the shape
+            # [1, num_boxes, coords]
+            # bbox = tf.expand_dims(bbox, 0)
+            # bbox = tf.transpose(bbox, [0, 2, 1])
+            # bbox = bbox.set_shape((object_count, 4))
 
             # Preprocess
-            images, labels, bboxes = preprocess_for_train(
-                images, labels, bboxes)
+            image, labeles, bboxes = preprocess_for_train(
+                image, labels, bboxes)
+
+            print('image {}'.format(image))
+            print('labels {}'.format(labels))
+            print('bboxes {}'.format(bboxes))
 
             # Need to rebuild summary
             self._build_summary()
 
-            # Create batche
-            # batch = tf.train.batch(
-            #     [images, labels, bboxes],
-            #     batch_size=self.config.batch_size,
-            #     num_threads=1,
-            #     capactiy=4 * config.batch_size,
-            #     allow_smaller_final_batch=True)
+            # Create batches
+            batch_size = self.config.batch_size
+            batch = tf.train.batch(
+                [image, labels, bboxes],
+                batch_size=batch_size,
+                num_threads=1,
+                capacity=1 * batch_size,
+                dynamic_pad=True,
+                allow_smaller_final_batch=True)
 
-            # Run TensorFlow Session
+            # # Run TensorFlow Session
             with tf.Session() as sess:
                 print('Initializing...')
                 sess.run([
                     tf.local_variables_initializer(),
                     tf.global_variables_initializer()
                 ])
+                tf.train.start_queue_runners(sess)
 
-                print(self.summary_op)
-                s = sess.run(self.summary_op)
-                self.summary_tr.add_summary(s)
+                for i in trange(100):
+                    s = sess.run(self.summary_op)
+
+                    self.summary_tr.add_summary(s)
+
                 self.summary_tr.flush()

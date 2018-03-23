@@ -5,7 +5,7 @@ from utils import tf_image
 
 slim = tf.contrib.slim
 
-out_shape = (224, 224)
+out_shape = (416, 416)
 
 
 def tf_summary_image(image, bboxes, name='image'):
@@ -13,7 +13,6 @@ def tf_summary_image(image, bboxes, name='image'):
     image = tf.expand_dims(image, 0)
     bboxes = tf.expand_dims(bboxes, 0)
     image_with_box = tf.image.draw_bounding_boxes(image, bboxes)
-    print('image summary')
     tf.summary.image(name, image_with_box)
 
 
@@ -32,7 +31,6 @@ def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
     Returns:
         A preprocessed image.
     """
-    fast_mode = False
     with tf.name_scope(scope, [image, labels, bboxes]):
         if image.get_shape().ndims != 3:
             raise ValueError('Input must be of size [height, width, C>0]')
@@ -42,11 +40,6 @@ def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
             image = tf.image.convert_image_dtype(image, dtype=tf.float32)
 
         tf_summary_image(image, bboxes, 'image_with_bboxes')
-
-        # # Remove DontCare labels.
-        # labels, bboxes = ssd_common.tf_bboxes_filter_labels(out_label,
-        #                                                     labels,
-        #                                                     bboxes)
 
         # Distort image and bounding boxes.
         # image = image
@@ -73,8 +66,8 @@ def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
         #     num_cases=4)
         # tf_summary_image(image, bboxes, 'image_color_distorted')
 
-        # Rescale to VGG input scale.
-        image = image * 255.
-        # image = tf_image_whitened(image, [_R_MEAN, _G_MEAN, _B_MEAN])
+        # Normalize to [-1, 1]
+        # image = tf.multiply(image, 1. / 127.5)
+        # image = tf.subtract(image, 1.0)
 
     return image, labels, bboxes

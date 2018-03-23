@@ -114,6 +114,7 @@ def _dict_to_tf_example(data,
         ymin.append(float(obj['bndbox']['ymin']) / height)
         xmax.append(float(obj['bndbox']['xmax']) / width)
         ymax.append(float(obj['bndbox']['ymax']) / height)
+        object_count = len(xmin)
 
         # Classes
         classes.append(int(VOC_LABELS[obj['name']][0]))
@@ -146,6 +147,7 @@ def _dict_to_tf_example(data,
         'image/object/bbox/xmax': float_list_feature(xmax),
         'image/object/bbox/ymin': float_list_feature(ymin),
         'image/object/bbox/ymax': float_list_feature(ymax),
+        'image/object/count': int64_feature(object_count)
     }
 
     return tf.train.Example(features=tf.train.Features(feature=features))
