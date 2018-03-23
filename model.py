@@ -70,7 +70,7 @@ class Yolo(object):
         # # Save file for the best model
         # self.save_file_best = os.path.join(self.config.save_dir, "model")
 
-    def train(self, dataset_train):
+    def train(self, dataset_train, dataset_val):
         print('\n--- Training')
 
         with tf.Graph().as_default():
@@ -81,16 +81,6 @@ class Yolo(object):
             [image, shape, labels, bboxes, object_count] = provider.get([
                 'image', 'shape', 'object/label', 'object/bbox', 'object/count'
             ])
-
-            # object_count = tf.cast(object_count, tf.int32)
-            # bboxes_shape = tf.parallel_stack([object_count, 4])
-            # bboxes = tf.reshape(bboxes, bboxes_shape)
-
-            # Force the variable number of bounding boxes into the shape
-            # [1, num_boxes, coords]
-            # bbox = tf.expand_dims(bbox, 0)
-            # bbox = tf.transpose(bbox, [0, 2, 1])
-            # bbox = bbox.set_shape((object_count, 4))
 
             # Preprocess
             image, labeles, bboxes = preprocess_for_train(
@@ -113,7 +103,7 @@ class Yolo(object):
                 dynamic_pad=True,
                 allow_smaller_final_batch=True)
 
-            # # Run TensorFlow Session
+            # Run TensorFlow Session
             with tf.Session() as sess:
                 print('Initializing...')
                 sess.run([
@@ -122,7 +112,13 @@ class Yolo(object):
                 ])
                 tf.train.start_queue_runners(sess)
 
-                for i in trange(100):
+                images, labels, bboxes = sess.run(batch)
+                print(images.shape)
+                print(labels.shape)
+                print(bboxes.shape)
+
+                print(labels)
+                for i in trange(config.epochs):
                     s = sess.run(self.summary_op)
 
                     self.summary_tr.add_summary(s)

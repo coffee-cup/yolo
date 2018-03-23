@@ -15,11 +15,11 @@ def main(config):
     print("\n--- Reading PASCAL {} data".format(config.year))
     dataset_train = load_data(config.data_dir, config.record_file, config.year,
                               'train')
-    # dataset_val = load_data(config.data_dir, config.record_file, config.year,
-    #                         'val')
+    dataset_val = load_data(config.data_dir, config.record_file, config.year,
+                            'val')
 
     yolo = Yolo(config)
-    yolo.train(dataset_train)
+    yolo.train(dataset_train, dataset_val)
 
     return
 
