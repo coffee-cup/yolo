@@ -71,7 +71,7 @@ def recursive_parse_xml_to_dict(xml):
     Returns:
         Python dictionary holding XML contents.
     """
-    if not xml:
+    if xml is None or len(xml) == 0:
         return {xml.tag: xml.text}
     result = {}
     for child in xml:

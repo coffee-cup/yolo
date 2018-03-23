@@ -19,14 +19,42 @@ def add_argument_group(name):
 
 
 # ----------------------------------------
+# Arguments for creating the dataset from pascal voc data
+dataset_arg = add_argument_group("Dataset")
+
+dataset_arg.add_argument(
+    "--data_dir",
+    type=str,
+    default="VOCdevkit",
+    help="Root directory to raw PACAL VOC dataset.")
+
+dataset_arg.add_argument(
+    "--set",
+    type=str,
+    default="trainval",
+    choices=["train", "val", "trainval", "test"],
+    help="Type of data to convert")
+
+dataset_arg.add_argument(
+    "--year",
+    type=str,
+    default="VOC2012",
+    choices=["VOC2007", "VOC2012", "merged"],
+    help="Desired challenge year")
+
+dataset_arg.add_argument("--output_path", type=str, default="pascal.record")
+
+# ----------------------------------------
 # Arguments for training
 train_arg = add_argument_group("Training")
 
 train_arg.add_argument(
-    "--data_dir",
+    "--record_file",
     type=str,
-    default="./cifar-10-batches-py",
-    help="Directory with CIFAR10 data")
+    default="./pascal_{}.record",
+    help=
+    "File for the Pascal VOC data. Expects {} to be in the name so it can be formatted with the split type"
+)
 
 train_arg.add_argument(
     "--learning_rate",
@@ -35,7 +63,7 @@ train_arg.add_argument(
     help="Learning rate (gradient step size)")
 
 train_arg.add_argument(
-    "--batch_size", type=int, default=100, help="Size of each training batch")
+    "--batch_size", type=int, default=32, help="Size of each training batch")
 
 train_arg.add_argument(
     "--max_iter", type=int, default=5000, help="Number of iterations to train")
