@@ -274,3 +274,4 @@ $RECYCLE.BIN/
 VOC*/
 *.record
 *.tar
+logs/
