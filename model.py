@@ -11,8 +11,42 @@ from utils.preprocess import preprocess_for_train
 class Yolo(object):
     """Yolo network"""
 
-    def __init__(self, config):
+    def __init__(self, config, dataset_train, dataset_val):
         self.config = config
+
+        # load dataset provider
+        provider = slim.dataset_data_provider.DatasetDataProvider(
+            dataset_train, num_readers=1, shuffle=True)
+
+        [image, shape, labels, bboxes, object_count] = provider.get([
+            'image', 'shape', 'object/label', 'object/bbox', 'object/count'
+        ])
+
+        # Preprocess
+        image, labeles, bboxes = preprocess_for_train(
+            image, labels, bboxes)
+
+        print('image {}'.format(image))
+        print('labels {}'.format(labels))
+        print('bboxes {}'.format(bboxes))
+
+        # Need to rebuild summary
+        self._build_summary()
+
+        # Create batches
+        batch_size = self.config.batch_size
+        batch = tf.train.batch(
+            [image, labels, bboxes],
+            batch_size=batch_size,
+            num_threads=1,
+            capacity=1 * batch_size,
+            dynamic_pad=True,
+            allow_smaller_final_batch=True)
+
+        self.image_in = batch[0]
+        self.label_in = batch[1]
+        self.bboxes_in = batch[2]
+
 
         self._build_placeholder()
         self._build_preprocessing()
@@ -34,7 +68,46 @@ class Yolo(object):
     def _build_model(self):
         """ Arguments required for darknet :
             net, classes, num_anchors, training=False, center=True"""
-        pass
+        n_filters = 32
+
+        cur_in = tf.layers.conv2d(self.image_in,n_filters,7,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+
+        n_filters = n_filters*2
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+
+        n_filters = n_filters*2
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+
+        n_filters = n_filters*2
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+
+        n_filters = n_filters*2
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+
+        n_filters = n_filters*2
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+
+        cur_in = tf.layers.conv2d(cur_in,6,1,1,padding="same",activation=tf.nn.relu)
+        cur_in = tf.layers.average_pooling2d(cur_in,(7,7),1,padding="same")
+        cur_in = tf.nn.softmax(cur_in)
+        print(cur_in.shape)
 
     def _build_loss(self):
         """Build our loss."""
@@ -70,38 +143,10 @@ class Yolo(object):
         # # Save file for the best model
         # self.save_file_best = os.path.join(self.config.save_dir, "model")
 
-    def train(self, dataset_train, dataset_val):
+    def train(self):
         print('\n--- Training')
 
         with tf.Graph().as_default():
-            # Create dataset provider
-            provider = slim.dataset_data_provider.DatasetDataProvider(
-                dataset_train, num_readers=1, shuffle=True)
-
-            [image, shape, labels, bboxes, object_count] = provider.get([
-                'image', 'shape', 'object/label', 'object/bbox', 'object/count'
-            ])
-
-            # Preprocess
-            image, labeles, bboxes = preprocess_for_train(
-                image, labels, bboxes)
-
-            print('image {}'.format(image))
-            print('labels {}'.format(labels))
-            print('bboxes {}'.format(bboxes))
-
-            # Need to rebuild summary
-            self._build_summary()
-
-            # Create batches
-            batch_size = self.config.batch_size
-            batch = tf.train.batch(
-                [image, labels, bboxes],
-                batch_size=batch_size,
-                num_threads=1,
-                capacity=1 * batch_size,
-                dynamic_pad=True,
-                allow_smaller_final_batch=True)
 
             # Run TensorFlow Session
             with tf.Session() as sess:
@@ -112,13 +157,15 @@ class Yolo(object):
                 ])
                 tf.train.start_queue_runners(sess)
 
-                images, labels, bboxes = sess.run(batch)
-                print(images.shape)
-                print(labels.shape)
-                print(bboxes.shape)
+                #images, labels, bboxes = sess.run(batch)
+                #print(images.shape)
+                #print(labels.shape)
+                #print(bboxes.shape)
 
-                print(labels)
-                for i in trange(config.epochs):
+                #print(labels)
+
+                print("_--------------- EXPECTED CRASH ------------------------_")
+                for i in trange(self.config.epochs):
                     s = sess.run(self.summary_op)
 
                     self.summary_tr.add_summary(s)
