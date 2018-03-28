@@ -22,9 +22,20 @@ class Yolo(object):
             'image', 'shape', 'object/label', 'object/bbox', 'object/count'
         ])
 
+        # load dataset provider
+        provider_v = slim.dataset_data_provider.DatasetDataProvider(
+            dataset_val, num_readers=1, shuffle=True)
+
+        [image_v, shape_v, labels_v, bboxes_v, object_count_v] = provider_v.get([
+            'image', 'shape', 'object/label', 'object/bbox', 'object/count'
+        ])
+
         # Preprocess
         image, labeles, bboxes = preprocess_for_train(
             image, labels, bboxes)
+
+        image_v, labeles_v, bboxes_v = preprocess_for_train(
+            image_v, labels_v, bboxes_v)
 
         print('image {}'.format(image))
         print('labels {}'.format(labels))
@@ -43,9 +54,27 @@ class Yolo(object):
             dynamic_pad=True,
             allow_smaller_final_batch=True)
 
-        self.image_in = batch[0]
-        self.label_in = batch[1]
-        self.bboxes_in = batch[2]
+
+        batch_v = tf.train.batch(
+            [image_v, labels_v, bboxes_v],
+            batch_size=batch_size,
+            num_threads=1,
+            capacity=1 * batch_size,
+            dynamic_pad=True,
+            allow_smaller_final_batch=True)
+
+        self.image_val = batch_v[0]
+        self.label_val = batch_v[1]
+        self.bboxes_val = batch_v[2]
+
+        self.image_tr = batch[0]
+        self.label_tr = batch[1]
+        self.bboxes_tr = batch[2]
+
+        self.image_in = self.image_tr
+        self.label_in = self.label_tr
+        self.bboxes_in = self.bboxes_tr
+        self.best_box = None
 
 
         self._build_placeholder()
@@ -56,6 +85,18 @@ class Yolo(object):
         self._build_eval()
         self._build_summary()
         self._build_writer()
+
+    def swapSet(self):
+        if self.image_in == self.image_tr:
+            #switch to validation
+            self.image_in = self.image_val
+            self.label_in = self.label_val
+            self.bboxes_in = self.bboxes_val
+        else:
+            #switch to train
+            self.image_in = self.image_tr
+            self.label_in = self.label_tr
+            self.bboxes_in = self.bboxes_tr
 
     def _build_placeholder(self):
         """Build placeholders."""
@@ -143,6 +184,11 @@ class Yolo(object):
             min_iou = tf.reduce_min(iou, axis=1)
             loss = tf.reduce_mean(min_iou)
 
+            box_iou_stack = tf.concat([tf.reshape(pred_boxes, (tf.shape(pred_boxes)[0],4)), tf.expand_dims(min_iou,1)], axis=1)
+            print(box_iou_stack.shape)
+            imin = tf.argmin(box_iou_stack,0)
+            self.best_box = box_iou_stack[imin[4], :]
+
             tf.summary.scalar("loss", loss)
             return loss
 
@@ -200,3 +246,8 @@ class Yolo(object):
                 self.summary_tr.add_summary(sop, gstp)
                 self.summary_tr.flush()
             #print(labels)
+
+            self.swapSet()
+            bBox = sess.run([self.best_box])
+            print("WIN")
+            print(bBox)
