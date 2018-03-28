@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tqdm import trange
-from utils.preprocess import preprocess_for_train
+from utils.preprocess import preprocess_for_train, preprocess_for_validation
 
 
 class Yolo(object):
@@ -14,68 +14,59 @@ class Yolo(object):
     def __init__(self, config, dataset_train, dataset_val):
         self.config = config
 
-        # load dataset provider
-        provider = slim.dataset_data_provider.DatasetDataProvider(
+        # Load dataset provider
+        provider_tr = slim.dataset_data_provider.DatasetDataProvider(
             dataset_train, num_readers=1, shuffle=True)
 
-        [image, shape, labels, bboxes, object_count] = provider.get([
-            'image', 'shape', 'object/label', 'object/bbox', 'object/count'
-        ])
+        provider_va = slim.dataset_data_provider.DatasetDataProvider(
+            dataset_val, num_readers=1, shuffle=False)
 
-        # load dataset provider
-        provider_v = slim.dataset_data_provider.DatasetDataProvider(
-            dataset_val, num_readers=1, shuffle=True)
+        [image_tr, labels_tr,
+         bboxes_tr] = provider_tr.get(['image', 'object/label', 'object/bbox'])
 
-        [image_v, shape_v, labels_v, bboxes_v, object_count_v] = provider_v.get([
-            'image', 'shape', 'object/label', 'object/bbox', 'object/count'
-        ])
+        [image_va, labels_va,
+         bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
 
         # Preprocess
-        image, labeles, bboxes = preprocess_for_train(
-            image, labels, bboxes)
+        image_tr, labels_tr, bboxes_tr = preprocess_for_train(
+            image_tr, labels_tr, bboxes_tr)
 
-        image_v, labeles_v, bboxes_v = preprocess_for_train(
-            image_v, labels_v, bboxes_v)
+        image_va, labels_va, bboxes_va = preprocess_for_validation(
+            image_va, labels_va, bboxes_va)
 
-        print('image {}'.format(image))
-        print('labels {}'.format(labels))
-        print('bboxes {}'.format(bboxes))
-
-        # Need to rebuild summary
-        self._build_summary()
+        print('image {}'.format(image_tr))
+        print('labels {}'.format(labels_tr))
+        print('bboxes {}'.format(bboxes_tr))
 
         # Create batches
         batch_size = self.config.batch_size
-        batch = tf.train.batch(
-            [image, labels, bboxes],
+        batch_tr = tf.train.batch(
+            [image_tr, labels_tr, bboxes_tr],
             batch_size=batch_size,
             num_threads=1,
             capacity=1 * batch_size,
             dynamic_pad=True,
             allow_smaller_final_batch=True)
 
-
-        batch_v = tf.train.batch(
-            [image_v, labels_v, bboxes_v],
-            batch_size=batch_size,
+        batch_va = tf.train.batch(
+            [image_va, labels_va, bboxes_va],
+            # batch_size=batch_size,
+            batch_size=1,
             num_threads=1,
-            capacity=1 * batch_size,
+            capacity=1,
             dynamic_pad=True,
             allow_smaller_final_batch=True)
 
-        self.image_val = batch_v[0]
-        self.label_val = batch_v[1]
-        self.bboxes_val = batch_v[2]
+        self.image_tr = batch_tr[0]
+        self.label_tr = batch_tr[1]
+        self.bboxes_tr = batch_tr[2]
 
-        self.image_tr = batch[0]
-        self.label_tr = batch[1]
-        self.bboxes_tr = batch[2]
+        self.image_va = batch_va[0]
+        self.label_va = batch_va[1]
+        self.bboxes_va = batch_va[2]
 
-        self.image_in = self.image_tr
-        self.label_in = self.label_tr
-        self.bboxes_in = self.bboxes_tr
+        self.data_train()
         self.best_box = None
-
 
         self._build_placeholder()
         self._build_preprocessing()
@@ -86,17 +77,23 @@ class Yolo(object):
         self._build_summary()
         self._build_writer()
 
-    def swapSet(self):
-        if self.image_in == self.image_tr:
-            #switch to validation
-            self.image_in = self.image_val
-            self.label_in = self.label_val
-            self.bboxes_in = self.bboxes_val
-        else:
-            #switch to train
+    def data_set(self, name='train'):
+        if name == 'train':
+            # Switch to training
             self.image_in = self.image_tr
             self.label_in = self.label_tr
             self.bboxes_in = self.bboxes_tr
+        elif name == 'val':
+            # Switch to validation
+            self.image_in = self.image_va
+            self.label_in = self.label_va
+            self.bboxes_in = self.bboxes_va
+
+    def data_train(self):
+        self.data_set(name='train')
+
+    def data_val(self):
+        self.data_set(name='val')
 
     def _build_placeholder(self):
         """Build placeholders."""
@@ -109,45 +106,100 @@ class Yolo(object):
     def _build_model(self):
         """ Arguments required for darknet :
             net, classes, num_anchors, training=False, center=True"""
-        with tf.variable_scope("Network", reuse=tf.AUTO_REUSE):
+        with tf.variable_scope("network", reuse=tf.AUTO_REUSE):
             n_filters = 32
 
-            cur_in = tf.layers.conv2d(self.image_in,n_filters,7,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+            cur_in = tf.layers.conv2d(
+                self.image_in,
+                n_filters,
+                7,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding="same")
 
-            n_filters = n_filters*2
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+            n_filters = n_filters * 2
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding="same")
 
-            n_filters = n_filters*2
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+            n_filters = n_filters * 2
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding="same")
 
-            n_filters = n_filters*2
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+            n_filters = n_filters * 2
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding="same")
 
-            n_filters = n_filters*2
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.max_pooling2d(cur_in,(2,2),2,padding="same")
+            n_filters = n_filters * 2
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding="same")
 
-            n_filters = n_filters*2
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters/2.0,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(cur_in,n_filters,3,1,padding="same",activation=tf.nn.relu)
+            n_filters = n_filters * 2
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding="same",
+                activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding="same", activation=tf.nn.relu)
 
-            cur_in = tf.layers.conv2d(cur_in,6,1,1,padding="same",activation=tf.nn.relu)
-            cur_in = tf.layers.average_pooling2d(cur_in,(7,7),1,padding="same")
+            cur_in = tf.layers.conv2d(
+                cur_in, 6, 1, 1, padding="same", activation=tf.nn.relu)
+            cur_in = tf.layers.average_pooling2d(
+                cur_in, (7, 7), 1, padding="same")
             cur_in = tf.nn.softmax(cur_in)
             return cur_in
 
@@ -155,8 +207,8 @@ class Yolo(object):
         """Build our loss."""
 
         with tf.variable_scope("Loss", reuse=tf.AUTO_REUSE):
-            pred_boxes = self.model[:,:,:,0:4]
-            real_boxes = self.bboxes_in[:,:,0:4]
+            pred_boxes = self.model[:, :, :, 0:4]
+            real_boxes = self.bboxes_in[:, :, 0:4]
 
             pred_boxes = tf.reshape(pred_boxes, (-1, 1, 4))
             real_boxes = tf.reshape(real_boxes, (1, -1, 4))
@@ -177,16 +229,22 @@ class Yolo(object):
             y1 = tf.minimum(y1_p, y1_r)
 
             inter = (x1 - x0) * (y1 - y0)
-            union = (x1_p - x0_p) * (y1_p - y0_p) + (x1_p - x0_p) * (y1_p - y0_p) - inter
+            union = (x1_p - x0_p) * (y1_p - y0_p) + (x1_p - x0_p) * (
+                y1_p - y0_p) - inter
 
             iou = inter / (union + 1)
 
             min_iou = tf.reduce_min(iou, axis=1)
             loss = tf.reduce_mean(min_iou)
 
-            box_iou_stack = tf.concat([tf.reshape(pred_boxes, (tf.shape(pred_boxes)[0],4)), tf.expand_dims(min_iou,1)], axis=1)
-            print(box_iou_stack.shape)
-            imin = tf.argmin(box_iou_stack,0)
+            box_iou_stack = tf.concat(
+                [
+                    tf.reshape(pred_boxes, (tf.shape(pred_boxes)[0], 4)),
+                    tf.expand_dims(min_iou, 1)
+                ],
+                axis=1)
+            # print(box_iou_stack.shape)
+            imin = tf.argmin(box_iou_stack, 0)
             self.best_box = box_iou_stack[imin[4], :]
 
             tf.summary.scalar("loss", loss)
@@ -195,7 +253,11 @@ class Yolo(object):
     def _build_optim(self):
         """Build optimizer related ops and vars."""
         with tf.variable_scope("Optim", reuse=tf.AUTO_REUSE):
-            self.global_step = tf.get_variable("global_step",shape=(),dtype=tf.int32,initializer=tf.zeros_initializer)
+            self.global_step = tf.get_variable(
+                "global_step",
+                shape=(),
+                dtype=tf.int32,
+                initializer=tf.zeros_initializer)
             adam = tf.train.AdamOptimizer(learning_rate=1e-4)
             return adam.minimize(self.loss, global_step=self.global_step)
 
@@ -229,7 +291,9 @@ class Yolo(object):
         print('\n--- Training')
 
         # Run TensorFlow Session
-        with tf.Session() as sess:
+        conf = tf.ConfigProto()
+        conf.gpu_options.allow_growth = True
+        with tf.Session(config=conf) as sess:
             print('Initializing...')
             sess.run([
                 tf.local_variables_initializer(),
@@ -237,17 +301,19 @@ class Yolo(object):
             ])
             tf.train.start_queue_runners(sess)
 
-            #images, labels, bboxes = sess.run(batch)
-            #print(images.shape)
-            #print(labels.shape)
-            #print(bboxes.shape)
             for idx_epoch in trange(self.config.max_iter):
-                _, sop, gstp = sess.run([self.optimizer, self.summary_op, self.global_step])
+                # Switch to training set
+                self.data_train()
+
+                _, sop, gstp = sess.run(
+                    [self.optimizer, self.summary_op, self.global_step])
+
                 self.summary_tr.add_summary(sop, gstp)
                 self.summary_tr.flush()
-            #print(labels)
 
-            self.swapSet()
+            self.data_val()
             bBox = sess.run([self.best_box])
-            print("WIN")
+            print('Win')
             print(bBox)
+
+            sess.close()

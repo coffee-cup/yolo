@@ -71,3 +71,26 @@ def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
         # image = tf.subtract(image, 1.0)
 
     return image, labels, bboxes
+
+
+def preprocess_for_validation(image,
+                              labels,
+                              bboxes,
+                              scope='preprocessing_validation'):
+    """Preprocesses the given image for validation."""
+    with tf.name_scope(scope, [image, labels, bboxes]):
+        if image.get_shape().ndims != 3:
+            raise ValueError('Input must be of size [height, width, C>0]')
+
+        # Convert to float scaled [0, 1].
+        if image.dtype != tf.float32:
+            image = tf.image.convert_image_dtype(image, dtype=tf.float32)
+
+        # Resize image to output size.
+        image = tf_image.resize_image(
+            image,
+            out_shape,
+            method=tf.image.ResizeMethod.BILINEAR,
+            align_corners=False)
+
+    return image, labels, bboxes
