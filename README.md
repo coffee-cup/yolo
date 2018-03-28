@@ -19,7 +19,9 @@ pip install -r requirements.txt
 
 If you have a `VOCdevkit` folder in the same directory as `run.py`, you should not need to change any config vars. Just run 
 
-`python run.py`
+```sh
+python run.py
+```
 
 This should do a few things
 
