@@ -115,32 +115,42 @@ class Yolo(object):
 
         with tf.variable_scope("Loss", reuse=tf.AUTO_REUSE):
             pred_boxes = self.model[:,:,:,0:4]
-            pred_area = tf.reduce_prod(tf.subtract(pred_boxes[:,:,:,0:2],pred_boxes[:,:,:,2:4]), axis=-1)
-            real_area = tf.reduce_prod(tf.subtract(self.bboxes_in[:,:,0:2],self.bboxes_in[:,:,2:4]), axis=-1)
+            real_boxes = self.bboxes_in[:,:,0:4]
 
-            max_min = tf.expand_dims(tf.maximum(tf.expand_dims(tf.reshape(pred_boxes[:,:,:,0:2],(tf.shape(pred_boxes)[0],13*13,2))[:,0,:], 1),self.bboxes_in[:,:,0:2]), 0)
-            min_max = tf.expand_dims(tf.minimum(tf.expand_dims(tf.reshape(pred_boxes[:,:,:,2:4],(tf.shape(pred_boxes)[0],13*13,2))[:,0,:], 1),self.bboxes_in[:,:,2:4]), 0)
+            pred_boxes = tf.reshape(pred_boxes, (-1, 1, 4))
+            real_boxes = tf.reshape(real_boxes, (1, -1, 4))
 
-            union = tf.expand_dims(tf.add(tf.reshape(pred_area, (tf.shape(pred_area)[0], 13*13))[:,0],real_area), 0)
+            x0_p = tf.minimum(pred_boxes[:, :, 0], pred_boxes[:, :, 2])
+            x1_p = tf.maximum(pred_boxes[:, :, 0], pred_boxes[:, :, 2])
+            y0_p = tf.minimum(pred_boxes[:, :, 1], pred_boxes[:, :, 3])
+            y1_p = tf.maximum(pred_boxes[:, :, 1], pred_boxes[:, :, 3])
 
-            for i in range(1,169):
-                max_min = tf.concat( [max_min, tf.expand_dims(tf.maximum(tf.expand_dims(tf.reshape(pred_boxes[:,:,:,0:2],(tf.shape(pred_boxes)[0],13*13,2))[:,i,:], 1), self.bboxes_in[:,:,0:2]), 0)], 0)
-                min_max = tf.concat( [min_max, tf.expand_dims(tf.minimum(tf.expand_dims(tf.reshape(pred_boxes[:,:,:,2:4],(tf.shape(pred_boxes)[0],13*13,2))[:,i,:], 1), self.bboxes_in[:,:,2:4]), 0)], 0)
+            x0_r = tf.minimum(real_boxes[:, :, 0], real_boxes[:, :, 2])
+            x1_r = tf.maximum(real_boxes[:, :, 0], real_boxes[:, :, 2])
+            y0_r = tf.minimum(real_boxes[:, :, 1], real_boxes[:, :, 3])
+            y1_r = tf.maximum(real_boxes[:, :, 1], real_boxes[:, :, 3])
 
-                union = tf.concat(tf.expand_dims(tf.add(tf.expand_dims(tf.reshape(pred_area, (tf.shape(pred_area)[0], 13*13))[:,i], 1),real_area), 0), 0)
+            x0 = tf.maximum(x0_p, x0_r)
+            x1 = tf.minimum(x1_p, x1_r)
+            y0 = tf.maximum(y0_p, y0_r)
+            y1 = tf.minimum(y1_p, y1_r)
 
-            intersection = tf.reduce_prod(tf.subtract(min_max,max_min),axis=-1)
+            inter = (x1 - x0) * (y1 - y0)
+            union = (x1_p - x0_p) * (y1_p - y0_p) + (x1_p - x0_p) * (y1_p - y0_p) - inter
 
-            iou = tf.subtract(tf.div(intersection, union), 1)
+            iou = inter / (union + 1)
 
-            tf.summary.scalar("loss", tf.reduce_sum(tf.reduce_sum(iou)))
-            return iou
+            min_iou = tf.reduce_min(iou, axis=1)
+            loss = tf.reduce_mean(min_iou)
+
+            tf.summary.scalar("loss", loss)
+            return loss
 
     def _build_optim(self):
         """Build optimizer related ops and vars."""
         with tf.variable_scope("Optim", reuse=tf.AUTO_REUSE):
             self.global_step = tf.get_variable("global_step",shape=(),dtype=tf.int32,initializer=tf.zeros_initializer)
-            adam = tf.train.AdamOptimizer()
+            adam = tf.train.AdamOptimizer(learning_rate=1e-4)
             return adam.minimize(self.loss, global_step=self.global_step)
 
     def _build_eval(self):
