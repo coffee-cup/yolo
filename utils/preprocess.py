@@ -80,7 +80,7 @@ def preprocess_for_validation(image,
                               labels,
                               bboxes,
                               size,
-                              scope='preprocessing_validation'):
+                              scope='preprocessing_val'):
     """Preprocesses the given image for validation."""
     with tf.name_scope(scope, [image, labels, bboxes]):
         if image.get_shape().ndims != 3:
