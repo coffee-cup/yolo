@@ -5,8 +5,6 @@ from utils import tf_image
 
 slim = tf.contrib.slim
 
-out_shape = (416, 416)
-
 
 def tf_summary_image(image, bboxes, name='image'):
     """Add image with bounding boxes to sumamry."""
@@ -16,7 +14,11 @@ def tf_summary_image(image, bboxes, name='image'):
     tf.summary.image(name, image_with_box)
 
 
-def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
+def preprocess_for_train(image,
+                         labels,
+                         bboxes,
+                         size,
+                         scope='preprocessing_train'):
     """Preprocesses the given image for training.
     Note that the actual resizing scale is sampled from
         [`resize_size_min`, `resize_size_max`].
@@ -49,6 +51,7 @@ def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
         #                                 aspect_ratio_range=CROP_RATIO_RANGE)
 
         # Resize image to output size.
+        out_shape = (size, size)
         image = tf_image.resize_image(
             image,
             out_shape,
@@ -76,6 +79,7 @@ def preprocess_for_train(image, labels, bboxes, scope='preprocessing_train'):
 def preprocess_for_validation(image,
                               labels,
                               bboxes,
+                              size,
                               scope='preprocessing_validation'):
     """Preprocesses the given image for validation."""
     with tf.name_scope(scope, [image, labels, bboxes]):
@@ -87,6 +91,7 @@ def preprocess_for_validation(image,
             image = tf.image.convert_image_dtype(image, dtype=tf.float32)
 
         # Resize image to output size.
+        out_shape = (size, size)
         image = tf_image.resize_image(
             image,
             out_shape,
