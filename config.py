@@ -86,6 +86,12 @@ train_arg.add_argument(
 train_arg.add_argument(
     "--report_freq", type=int, default=50, help="Summary interval")
 
+train_arg.add_argument(
+    "--print_boxes",
+    type=str2bool,
+    default=False,
+    help="Whether or not to print the predicted validation bounding boxes")
+
 # ----------------------------------------
 # Arguments for model
 model_arg = add_argument_group("Model")

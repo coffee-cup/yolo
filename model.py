@@ -232,7 +232,6 @@ class Yolo(object):
                 axis=1)
 
             batch_size = tf.shape(self.bboxes_in)[0]
-            print(batch_size)
 
             # reshape box predictions
 
@@ -280,19 +279,9 @@ class Yolo(object):
     def _build_eval(self):
         '''Build the evaluation related ops'''
         with tf.variable_scope('Eval', tf.AUTO_REUSE):
-            print('in eval')
-            print('images in: {}'.format(self.images_in.shape))
-            print('best boxes: {}'.format(self.best_boxes.shape))
-
             images_with_boxes = tf.image.draw_bounding_boxes(
                 self.images_in, self.boxes)
-            # tf.summary.image('predictions', images_with_boxes)
-            # i = self.images_in[0, :, :, :]
-            # i = tf.expand_dims(i, 0)
-            # print('images {}'.format(i.shape))
-            # print('boxes {}'.format(self.best_box.shape))
-            # image_with_box = tf.image.draw_bounding_boxes(i, self.best_box)
-            # tf.summary.image('validation', image_with_box)
+            tf.summary.image('prediction', images_with_boxes)
 
     def _build_summary(self):
         '''Build summary ops.'''
@@ -337,10 +326,8 @@ class Yolo(object):
                     fetches={
                         'optimizer': self.optimizer,
                         'global_step': self.global_step,
+                        'summary': self.summary_op,
                         'best_boxes': self.best_boxes,
-                        'boxes': self.boxes,
-                        'min_iou': self.min_iou,
-                        'best_index': self.best_index
                     },
                     feed_dict={
                         self.images_in: images_tr,
@@ -348,29 +335,8 @@ class Yolo(object):
                         self.bboxes_in: bboxes_tr
                     })
 
-                print('\nFUCKKK')
-                print('best boxes: {}'.format(res['best_boxes'].shape))
-                print('images: {}'.format(images_tr.shape))
-                print('boxes!: {}'.format(res['boxes'].shape))
-                print('min_iou: {}'.format(res['min_iou'].shape))
-                print('best_index: {}'.format(res['best_index']))
-
-                print('\n\nHELLOOOO\n')
-
-                boxes = res['boxes']
-                indexs = tf.expand_dims(
-                    tf.range(res['best_index'].shape[0]), 1)
-                print('best index shape: {}'.format(res['best_index'].shape))
-                print('range shape: {}'.format(indexs.shape))
-
-                inds = tf.concat([indexs, res['best_index']], axis=1)
-                row = tf.gather_nd(boxes, inds)
-
-                print('row: {}'.format(sess.run(row)))
-                print(sess.run(inds))
-
-                # self.summary_tr.add_summary(res['summary'], res['global_step'])
-                # self.summary_tr.flush()
+                self.summary_tr.add_summary(res['summary'], res['global_step'])
+                self.summary_tr.flush()
 
                 if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
                     images_va, labels_va, bboxes_va = sess.run(self.batch_va)
@@ -385,6 +351,10 @@ class Yolo(object):
                             self.labels_in: labels_va,
                             self.bboxes_in: bboxes_va
                         })
+
+                    if self.config.print_boxes:
+                        print(res['best_boxes'])
+
                     self.summary_va.add_summary(res['summary'],
                                                 res['global_step'])
                     self.summary_va.flush()
