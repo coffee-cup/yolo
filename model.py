@@ -96,23 +96,34 @@ class Yolo(object):
         with tf.variable_scope('network', reuse=tf.AUTO_REUSE):
             n_filters = 32
 
+            # Output 224x224
             cur_in = tf.layers.conv2d(
                 self.images_in,
                 n_filters,
-                7,
-                1,
+                7,  # strides
+                1,  # padding
                 padding='same',
                 activation=tf.nn.relu)
+
+            # Output 112x112
             cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
 
             n_filters = n_filters * 2
+
+            # Output 112x112
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 56x56
             cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
 
             n_filters = n_filters * 2
+
+            # Output 56x56
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 56x56
             cur_in = tf.layers.conv2d(
                 cur_in,
                 n_filters / 2.0,
@@ -120,13 +131,21 @@ class Yolo(object):
                 1,
                 padding='same',
                 activation=tf.nn.relu)
+
+            # Output 56x56
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 28x28
             cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
 
             n_filters = n_filters * 2
+
+            # Output 28x28
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 28x28
             cur_in = tf.layers.conv2d(
                 cur_in,
                 n_filters / 2.0,
@@ -134,13 +153,21 @@ class Yolo(object):
                 1,
                 padding='same',
                 activation=tf.nn.relu)
+
+            # Output 28x28
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 14x14
             cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
 
             n_filters = n_filters * 2
+
+            # Output 14x14
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 14x14
             cur_in = tf.layers.conv2d(
                 cur_in,
                 n_filters / 2.0,
@@ -148,8 +175,12 @@ class Yolo(object):
                 1,
                 padding='same',
                 activation=tf.nn.relu)
+
+            # Output 14x14
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 14x14
             cur_in = tf.layers.conv2d(
                 cur_in,
                 n_filters / 2.0,
@@ -157,36 +188,55 @@ class Yolo(object):
                 1,
                 padding='same',
                 activation=tf.nn.relu)
+
+            # Output 14x14
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 7x7
             cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
 
             n_filters = n_filters * 2
-            cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
-            cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
+
+            # Output 7x7
             cur_in = tf.layers.conv2d(
                 cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
 
+            # Output 7x7
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding='same',
+                activation=tf.nn.relu)
+
+            # Output 7x7
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 7x7
+            cur_in = tf.layers.conv2d(
+                cur_in,
+                n_filters / 2.0,
+                1,
+                1,
+                padding='same',
+                activation=tf.nn.relu)
+
+            # Output 7x7
+            cur_in = tf.layers.conv2d(
+                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 7x7
             cur_in = tf.layers.conv2d(
                 cur_in, 6, 1, 1, padding='same', activation=tf.nn.relu)
+
+            # Output 1000
             cur_in = tf.layers.average_pooling2d(
                 cur_in, (7, 7), 1, padding='same')
+
+            # Predictions
             cur_in = tf.nn.softmax(cur_in)
             return cur_in
 
