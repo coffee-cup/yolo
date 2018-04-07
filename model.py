@@ -5,7 +5,28 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tqdm import trange
-from utils.preprocess import preprocess_for_train, preprocess_for_validation
+from utils.preprocess import (preprocess_for_train, preprocess_for_validation,
+                              process_bboxes_and_labels)
+
+IMAGE_H, IMAGE_W = 416, 416
+GRID_H, GRID_W = 13, 13
+BOX = 5
+CLASS = 20
+CLASS_WEIGHTS = np.ones(CLASS, dtype='float32')
+OBJ_THRESHOLD = 0.3
+NMS_THRESHOLD = 0.3
+ANCHORS = [
+    0.57273, 0.677385, 1.87446, 2.06253, 3.33843, 5.47434, 7.88282, 3.52778,
+    9.77052, 9.16828
+]
+
+NO_OBJECT_SCALE = 1.0
+OBJECT_SCALE = 5.0
+COORD_SCALE = 1.0
+CLASS_SCALE = 1.0
+
+WARM_UP_BATCHES = 0
+TRUE_BOX_BUFFER = 50
 
 
 class Yolo(object):
@@ -30,6 +51,8 @@ class Yolo(object):
         # Preprocess
         image_tr, labels_tr, bboxes_tr = preprocess_for_train(
             image_tr, labels_tr, bboxes_tr, config.image_size)
+
+        self.boxes_testing = process_bboxes_and_labels(bboxes_tr, labels_tr)
 
         image_va, labels_va, bboxes_va = preprocess_for_validation(
             image_va, labels_va, bboxes_va, config.image_size)
@@ -57,14 +80,12 @@ class Yolo(object):
             dynamic_pad=True,
             allow_smaller_final_batch=True)
 
-        self.best_box = None
-
         self._build_placeholder()
         self._build_preprocessing()
         self.model = self._build_model()
         self.loss = self._build_loss()
-        self.optimizer = self._build_optim()
-        self._build_eval()
+        # self.optimizer = self._build_optim()
+        # self._build_eval()
         self._build_summary()
         self._build_writer()
 
@@ -94,153 +115,149 @@ class Yolo(object):
         ''' Arguments required for darknet :
             net, classes, num_anchors, training=False, center=True'''
         with tf.variable_scope('network', reuse=tf.AUTO_REUSE):
-            n_filters = 32
+            # Conv1D(filters, kernel_size, strides=1, padding='valid'
+
+            # tf.layers.conv2d(
+            #     inputs,
+            #     filters,
+            #     kernel_size,
+            #     strides=(1, 1),
+
+            # tf.layers.max_pooling2d(
+            #     inputs,
+            #     pool_size,
+            #     strides,
+            #     padding='valid',
 
             # Output 224x224
             cur_in = tf.layers.conv2d(
                 self.images_in,
-                n_filters,
-                7,  # strides
-                1,  # padding
-                padding='same',
-                activation=tf.nn.relu)
+                32,  # filters
+                3,  # kernel size
+                strides=1,
+                padding='same')
 
             # Output 112x112
-            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
-
-            n_filters = n_filters * 2
+            cur_in = tf.layers.max_pooling2d(
+                cur_in,
+                2,  # pool size
+                2,  # strides
+                padding='same')
 
             # Output 112x112
-            cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+            cur_in = tf.layers.conv2d(cur_in, 64, 3, strides=1, padding='same')
 
             # Output 56x56
-            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
-
-            n_filters = n_filters * 2
+            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
 
             # Output 56x56
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 128, 3, strides=1, padding='same')
+
+            # Output 56x56
+            cur_in = tf.layers.conv2d(cur_in, 64, 1, strides=1, padding='same')
 
             # Output 56x56
             cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
-
-            # Output 56x56
-            cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 128, 3, strides=1, padding='same')
 
             # Output 28x28
-            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
-
-            n_filters = n_filters * 2
+            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
 
             # Output 28x28
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 256, 3, strides=1, padding='same')
 
             # Output 28x28
             cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
+                cur_in, 128, 1, strides=1, padding='same')
 
             # Output 28x28
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 256, 3, strides=1, padding='same')
 
             # Output 14x14
-            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
-
-            n_filters = n_filters * 2
+            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
 
             # Output 14x14
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 512, 3, strides=1, padding='same')
 
             # Output 14x14
             cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
+                cur_in, 256, 1, strides=1, padding='same')
 
             # Output 14x14
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 512, 3, strides=1, padding='same')
 
             # Output 14x14
             cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
+                cur_in, 256, 1, strides=1, padding='same')
 
             # Output 14x14
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 512, 3, strides=1, padding='same')
 
             # Output 7x7
-            cur_in = tf.layers.max_pooling2d(cur_in, (2, 2), 2, padding='same')
-
-            n_filters = n_filters * 2
+            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
 
             # Output 7x7
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 1024, 3, strides=1, padding='same')
 
             # Output 7x7
             cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
+                cur_in, 512, 1, strides=1, padding='same')
 
             # Output 7x7
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 1024, 3, strides=1, padding='same')
 
             # Output 7x7
             cur_in = tf.layers.conv2d(
-                cur_in,
-                n_filters / 2.0,
-                1,
-                1,
-                padding='same',
-                activation=tf.nn.relu)
+                cur_in, 512, 1, strides=1, padding='same')
 
             # Output 7x7
             cur_in = tf.layers.conv2d(
-                cur_in, n_filters, 3, 1, padding='same', activation=tf.nn.relu)
+                cur_in, 1024, 3, strides=1, padding='same')
 
-            # Output 7x7
             cur_in = tf.layers.conv2d(
-                cur_in, 6, 1, 1, padding='same', activation=tf.nn.relu)
+                cur_in, BOX * (4 + 1 + CLASS), 1, strides=1, padding='same')
 
-            # Output 1000
-            cur_in = tf.layers.average_pooling2d(
-                cur_in, (7, 7), 1, padding='same')
+            cur_in = tf.reshape(cur_in, (GRID_H, GRID_W, BOX, 4 + 1 + CLASS))
+
+            print(cur_in.shape)
 
             # Predictions
-            cur_in = tf.nn.softmax(cur_in)
+            # cur_in = tf.nn.softmax(cur_in)
             return cur_in
 
     def _build_loss(self):
+        with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
+
+            y_true = self.bboxes_in
+            y_pred = self.model
+
+            mask_shape = tf.shape(y_true)[:4]
+            batch_size = tf.shape(self.bboxes_in)[0]
+            print('mask shape: {}'.format(mask_shape))
+
+            cell_x = tf.to_float(
+                tf.reshape(
+                    tf.tile(tf.range(GRID_W), [GRID_H]),
+                    (1, GRID_H, GRID_W, 1, 1)))
+            cell_y = tf.transpose(cell_x, (0, 2, 1, 3, 4))
+            cell_grid = tf.tile(
+                tf.concat([cell_x, cell_y], -1), [batch_size, 1, 1, 5, 1])
+
+            coord_mask = tf.zeros(mask_shape)
+            conf_mask = tf.zeros(mask_shape)
+            class_mask = tf.zeros(mask_shape)
+
+            return y_true
+
+    def _build_loss_2(self):
         '''Build our loss.'''
 
         with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
@@ -369,24 +386,43 @@ class Yolo(object):
             tf.train.start_queue_runners(sess)
 
             for idx_epoch in trange(self.config.max_iter):
+                print('\n\n')
+
                 # Get training batch
                 images_tr, labels_tr, bboxes_tr = sess.run(self.batch_tr)
 
-                res = sess.run(
-                    fetches={
-                        'optimizer': self.optimizer,
-                        'global_step': self.global_step,
-                        'summary': self.summary_op,
-                        'best_boxes': self.best_boxes,
-                    },
-                    feed_dict={
-                        self.images_in: images_tr,
-                        self.labels_in: labels_tr,
-                        self.bboxes_in: bboxes_tr
-                    })
+                # res = sess.run(
+                #     self.boxes_testing,
+                #     feed_dict={
+                #         self.images_in: images_tr,
+                #         self.labels_in: labels_tr,
+                #         self.bboxes_in: bboxes_tr
+                #     })
 
-                self.summary_tr.add_summary(res['summary'], res['global_step'])
-                self.summary_tr.flush()
+                res = sess.run(self.boxes_testing)
+
+                print('\n\n--- Output')
+                print(res)
+
+                # print(res)
+                # print(res[:, 0])
+
+                # res = sess.run(
+                #     fetches={
+                #         # 'optimizer': self.optimizer,
+                #         'global_step': self.global_step
+                #         # 'summary': self.summary_op
+                #     },
+                #     feed_dict={
+                #         self.images_in: images_tr,
+                #         self.labels_in: labels_tr,
+                #         self.bboxes_in: bboxes_tr
+                #     })
+
+                # self.summary_tr.add_summary(res['summary'], res['global_step'])
+                # self.summary_tr.flush()
+
+                break
 
                 if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
                     images_va, labels_va, bboxes_va = sess.run(self.batch_va)

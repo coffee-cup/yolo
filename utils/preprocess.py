@@ -6,6 +6,29 @@ from utils import tf_image
 slim = tf.contrib.slim
 
 
+def process_bboxes_and_labels(bboxes, labels):
+    '''
+    Convert bboxes in form ymin, xmin, ymax xmax
+    to xcenter, ycenter, width, height, class label
+    '''
+    # boxes are in the form ymin, xmin, ymax, xmax
+    # we want xcenter, ycenter, width, height, class
+    ymin = tf.reshape(bboxes[:, 0], (-1, 1))
+    xmin = tf.reshape(bboxes[:, 1], (-1, 1))
+    ymax = tf.reshape(bboxes[:, 2], (-1, 1))
+    xmax = tf.reshape(bboxes[:, 3], (-1, 1))
+
+    center_x = 0.5 * (xmin + xmax)
+    center_y = 0.5 * (ymin + ymax)
+    width = xmax - xmin
+    height = ymax - ymin
+
+    labels = tf.cast(tf.reshape(labels, (-1, 1)), tf.float32)
+    bboxes = tf.concat([center_x, center_y, width, height, labels], 1)
+
+    return bboxes
+
+
 def tf_summary_image(image, bboxes, name='image'):
     """Add image with bounding boxes to sumamry."""
     image = tf.expand_dims(image, 0)
