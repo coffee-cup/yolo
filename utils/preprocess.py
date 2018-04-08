@@ -24,9 +24,9 @@ def process_bboxes_and_labels(bboxes, labels):
     height = ymax - ymin
 
     labels = tf.cast(tf.reshape(labels, (-1, 1)), tf.float32)
-    bboxes = tf.concat([center_x, center_y, width, height, labels], 1)
+    bboxes_labels = tf.concat([center_x, center_y, width, height, labels], 1)
 
-    return bboxes
+    return bboxes_labels
 
 
 def tf_summary_image(image, bboxes, name='image'):
@@ -96,7 +96,10 @@ def preprocess_for_train(image,
         # image = tf.multiply(image, 1. / 127.5)
         # image = tf.subtract(image, 1.0)
 
-    return image, labels, bboxes
+        # Convert and concat bboxes and labels
+        bboxes_labels = process_bboxes_and_labels(bboxes, labels)
+
+    return image, bboxes_labels
 
 
 def preprocess_for_validation(image,

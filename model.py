@@ -1,10 +1,11 @@
 import os
 
 import numpy as np
+from tqdm import trange
 
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-from tqdm import trange
+from utils import *
 from utils.preprocess import (preprocess_for_train, preprocess_for_validation,
                               process_bboxes_and_labels)
 
@@ -49,10 +50,8 @@ class Yolo(object):
          bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
 
         # Preprocess
-        image_tr, labels_tr, bboxes_tr = preprocess_for_train(
+        image_tr, bboxes_tr = preprocess_for_train(
             image_tr, labels_tr, bboxes_tr, config.image_size)
-
-        self.boxes_testing = process_bboxes_and_labels(bboxes_tr, labels_tr)
 
         image_va, labels_va, bboxes_va = preprocess_for_validation(
             image_va, labels_va, bboxes_va, config.image_size)
@@ -64,7 +63,7 @@ class Yolo(object):
         # Create batches
         batch_size = self.config.batch_size
         self.batch_tr = tf.train.batch(
-            [image_tr, labels_tr, bboxes_tr],
+            [image_tr, bboxes_tr],
             batch_size=batch_size,
             num_threads=1,
             capacity=1 * batch_size,
@@ -100,12 +99,7 @@ class Yolo(object):
         self.images_in = tf.placeholder(
             tf.float32,
             shape=(None, self.config.image_size, self.config.image_size, 3))
-        self.labels_in = tf.placeholder(
-            tf.int64, shape=(
-                None,
-                None,
-            ))
-        self.bboxes_in = tf.placeholder(tf.float32, shape=(None, None, 4))
+        self.bboxes_in = tf.placeholder(tf.float32, shape=(None, None, 5))
 
     def _build_preprocessing(self):
         '''Build preprocessing related graph.'''
@@ -114,140 +108,94 @@ class Yolo(object):
     def _build_model(self):
         ''' Arguments required for darknet :
             net, classes, num_anchors, training=False, center=True'''
-        with tf.variable_scope('network', reuse=tf.AUTO_REUSE):
-            # Conv1D(filters, kernel_size, strides=1, padding='valid'
 
-            # tf.layers.conv2d(
-            #     inputs,
-            #     filters,
-            #     kernel_size,
-            #     strides=(1, 1),
+        def conv_layer(x, filters, kernel_size, name):
+            with tf.variable_scope(name):
+                x = tf.layers.conv2d(
+                    x,
+                    filters,
+                    kernel_size,
+                    padding='same',
+                    kernel_initializer=tf.contrib.layers.
+                    xavier_initializer_conv2d(),
+                    bias_initializer=tf.zeros_initializer())
+                x = tf.nn.relu(x)
 
-            # tf.layers.max_pooling2d(
-            #     inputs,
-            #     pool_size,
-            #     strides,
-            #     padding='valid',
+            return x
 
-            # Output 224x224
-            cur_in = tf.layers.conv2d(
-                self.images_in,
-                32,  # filters
-                3,  # kernel size
-                strides=1,
-                padding='same')
+        def pool_layer(x, size, stride, name):
+            with tf.name_scope(name):
+                x = tf.layers.max_pooling2d(x, size, stride, padding='same')
 
-            # Output 112x112
-            cur_in = tf.layers.max_pooling2d(
+            return x
+
+        def passthrough_layer(a, b, filters, depth, size, name):
+            b = conv_layer(b, filters, depth, name)
+            b = tf.space_to_depth(b, size)
+            y = tf.concat([a, b], axis=3)
+
+            return y
+
+        with tf.variable_scope('Network', reuse=tf.AUTO_REUSE):
+            cur_in = conv_layer(self.images_in, 32, 3, 'conv1')
+            cur_in = pool_layer(cur_in, 2, 2, 'maxpool1')
+            cur_in = conv_layer(cur_in, 64, 3, 'conv2')
+            cur_in = pool_layer(cur_in, 2, 2, 'maxpool2')
+
+            cur_in = conv_layer(cur_in, 128, 3, 'conv3')
+            cur_in = conv_layer(cur_in, 64, 1, 'conv4')
+            cur_in = conv_layer(cur_in, 128, 3, 'conv5')
+            cur_in = pool_layer(cur_in, 2, 2, 'maxpool5')
+
+            cur_in = conv_layer(cur_in, 256, 3, 'conv6')
+            cur_in = conv_layer(cur_in, 128, 1, 'conv7')
+            cur_in = conv_layer(cur_in, 256, 3, 'conv8')
+            cur_in = pool_layer(cur_in, 2, 2, 'maxpool8')
+
+            cur_in = conv_layer(cur_in, 512, 3, 'conv9')
+            cur_in = conv_layer(cur_in, 256, 1, 'conv10')
+            cur_in = conv_layer(cur_in, 512, 3, 'conv11')
+            cur_in = conv_layer(cur_in, 256, 1, 'conv12')
+            passthrough = conv_layer(cur_in, 512, 3, 'conv13')
+            cur_in = pool_layer(passthrough, 2, 2, 'maxpool13')
+
+            cur_in = conv_layer(cur_in, 1024, 3, 'conv14')
+            cur_in = conv_layer(cur_in, 512, 1, 'conv15')
+            cur_in = conv_layer(cur_in, 1024, 3, 'conv16')
+            cur_in = conv_layer(cur_in, 512, 1, 'conv17')
+            cur_in = conv_layer(cur_in, 1024, 3, 'conv18')
+
+            cur_in = conv_layer(cur_in, 1024, 3, 'conv19')
+            cur_in = conv_layer(cur_in, 1024, 3, 'conv20')
+            cur_in = passthrough_layer(cur_in, passthrough, 64, 3, 2, 'conv21')
+            cur_in = conv_layer(cur_in, 1024, 3, 'conv22')
+            cur_in = conv_layer(cur_in, BOX * (4 + 1 + CLASS), 1, 'conv23')
+
+            y = tf.reshape(
                 cur_in,
-                2,  # pool size
-                2,  # strides
-                padding='same')
+                shape=(-1, GRID_H, GRID_W, BOX, 4 + 1 + CLASS),
+                name='y')
 
-            # Output 112x112
-            cur_in = tf.layers.conv2d(cur_in, 64, 3, strides=1, padding='same')
-
-            # Output 56x56
-            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
-
-            # Output 56x56
-            cur_in = tf.layers.conv2d(
-                cur_in, 128, 3, strides=1, padding='same')
-
-            # Output 56x56
-            cur_in = tf.layers.conv2d(cur_in, 64, 1, strides=1, padding='same')
-
-            # Output 56x56
-            cur_in = tf.layers.conv2d(
-                cur_in, 128, 3, strides=1, padding='same')
-
-            # Output 28x28
-            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
-
-            # Output 28x28
-            cur_in = tf.layers.conv2d(
-                cur_in, 256, 3, strides=1, padding='same')
-
-            # Output 28x28
-            cur_in = tf.layers.conv2d(
-                cur_in, 128, 1, strides=1, padding='same')
-
-            # Output 28x28
-            cur_in = tf.layers.conv2d(
-                cur_in, 256, 3, strides=1, padding='same')
-
-            # Output 14x14
-            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
-
-            # Output 14x14
-            cur_in = tf.layers.conv2d(
-                cur_in, 512, 3, strides=1, padding='same')
-
-            # Output 14x14
-            cur_in = tf.layers.conv2d(
-                cur_in, 256, 1, strides=1, padding='same')
-
-            # Output 14x14
-            cur_in = tf.layers.conv2d(
-                cur_in, 512, 3, strides=1, padding='same')
-
-            # Output 14x14
-            cur_in = tf.layers.conv2d(
-                cur_in, 256, 1, strides=1, padding='same')
-
-            # Output 14x14
-            cur_in = tf.layers.conv2d(
-                cur_in, 512, 3, strides=1, padding='same')
-
-            # Output 7x7
-            cur_in = tf.layers.max_pooling2d(cur_in, 2, 2, padding='same')
-
-            # Output 7x7
-            cur_in = tf.layers.conv2d(
-                cur_in, 1024, 3, strides=1, padding='same')
-
-            # Output 7x7
-            cur_in = tf.layers.conv2d(
-                cur_in, 512, 1, strides=1, padding='same')
-
-            # Output 7x7
-            cur_in = tf.layers.conv2d(
-                cur_in, 1024, 3, strides=1, padding='same')
-
-            # Output 7x7
-            cur_in = tf.layers.conv2d(
-                cur_in, 512, 1, strides=1, padding='same')
-
-            # Output 7x7
-            cur_in = tf.layers.conv2d(
-                cur_in, 1024, 3, strides=1, padding='same')
-
-            cur_in = tf.layers.conv2d(
-                cur_in, BOX * (4 + 1 + CLASS), 1, strides=1, padding='same')
-
-            cur_in = tf.reshape(cur_in, (GRID_H, GRID_W, BOX, 4 + 1 + CLASS))
-
-            print(cur_in.shape)
-
-            # Predictions
-            # cur_in = tf.nn.softmax(cur_in)
-            return cur_in
+            return y
 
     def _build_loss(self):
         with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
-
             y_true = self.bboxes_in
             y_pred = self.model
+            batch_size = tf.shape(self.bboxes_in)[0]
+
+            print('model output shape {}'.format(self.model.shape))
+            print('bboxes in shape {}'.format(self.bboxes_in.shape))
 
             mask_shape = tf.shape(y_true)[:4]
-            batch_size = tf.shape(self.bboxes_in)[0]
-            print('mask shape: {}'.format(mask_shape))
+            print('mask shape {}'.format(mask_shape))
 
             cell_x = tf.to_float(
                 tf.reshape(
                     tf.tile(tf.range(GRID_W), [GRID_H]),
                     (1, GRID_H, GRID_W, 1, 1)))
             cell_y = tf.transpose(cell_x, (0, 2, 1, 3, 4))
+
             cell_grid = tf.tile(
                 tf.concat([cell_x, cell_y], -1), [batch_size, 1, 1, 5, 1])
 
@@ -255,7 +203,48 @@ class Yolo(object):
             conf_mask = tf.zeros(mask_shape)
             class_mask = tf.zeros(mask_shape)
 
-            return y_true
+            ###
+            # Adjust Prediction
+            ###
+
+            # adjust x and y
+            pred_box_xy = tf.sigmoid(y_pred[..., :2]) + cell_grid
+
+            # adjust w and h
+            pred_box_wh = tf.exp(y_pred[..., 2:4]) * np.reshape(
+                ANCHORS, [1, 1, 1, BOX, 2])
+
+            # adjust confidence
+            pred_box_conf = tf.sigmoid(y_pred[..., 4])
+
+            # adjust class probabilities
+            pred_box_class = y_pred[..., 5:]
+
+            print('pred box xy  {}'.format(pred_box_xy.shape))
+            print('pred box wh  {}'.format(pred_box_wh.shape))
+            print('pred conf    {}'.format(pred_box_conf.shape))
+            print('pred classes {}'.format(pred_box_class.shape))
+
+            ###
+            # Adjust Ground Truth
+            ###
+
+            # adjust x and y
+            true_box_xy = y_true[..., 0:2]
+
+            # adjust w and h
+            true_box_wh = y_true[..., 2:4]
+
+            # adjust confidence
+            true_wh_half = true_box_wh / 2.
+            true_mins = true_box_xy - true_wh_half
+            true_maxes = true_box_xy + true_wh_half
+
+            pred_wh_half = pred_box_wh / 2.
+            pred_mins = pred_box_xy - pred_wh_half
+            pred_maxes = pred_box_xy + pred_wh_half
+
+            return mask_shape
 
     def _build_loss_2(self):
         '''Build our loss.'''
@@ -385,24 +374,31 @@ class Yolo(object):
             ])
             tf.train.start_queue_runners(sess)
 
+            # Add the session graph to training summary
+            # so we can view in Tensorboard
+            self.summary_tr.add_graph(sess.graph)
+
             for idx_epoch in trange(self.config.max_iter):
                 print('\n\n')
 
                 # Get training batch
-                images_tr, labels_tr, bboxes_tr = sess.run(self.batch_tr)
+                images_tr, bboxes_tr = sess.run(self.batch_tr)
 
-                # res = sess.run(
-                #     self.boxes_testing,
-                #     feed_dict={
-                #         self.images_in: images_tr,
-                #         self.labels_in: labels_tr,
-                #         self.bboxes_in: bboxes_tr
-                #     })
+                print('\n\n--- Boxes')
+                print(bboxes_tr)
 
-                res = sess.run(self.boxes_testing)
+                res = sess.run(
+                    self.loss,
+                    feed_dict={
+                        self.images_in: images_tr,
+                        self.bboxes_in: bboxes_tr
+                    })
 
                 print('\n\n--- Output')
                 print(res)
+
+                print('\n\n--- Output Shape')
+                print(res.shape)
 
                 # print(res)
                 # print(res[:, 0])
