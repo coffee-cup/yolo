@@ -28,18 +28,26 @@ import os
 
 import PIL.Image
 from lxml import etree
+from tqdm import trange
 
 import tensorflow as tf
 from config import get_config, print_usage
-from tqdm import trange
-from utils import dataset_util, voc_common
+from utils import dataset_util
 from utils.dataset_util import (bytes_feature, bytes_list_feature,
                                 float_list_feature, int64_feature,
                                 int64_list_feature)
+from utils.voc_common import *
 
 slim = tf.contrib.slim
 
-VOC_LABELS = voc_common.VOC_LABELS
+
+def create_box(xmin, ymin, xmax, ymax, c):
+    '''Create a bounding box.'''
+    cx = (xmin + xmax) / 2
+    cy = (ymin + ymax) / 2
+    w = xmax - xmin
+    h = ymax - ymin
+    return [cx, cy, w, h, c]
 
 
 def _dict_to_tf_example(data,
@@ -93,6 +101,8 @@ def _dict_to_tf_example(data,
     difficult = []
     truncated = []
 
+    boxes = []
+
     # For each detection in the image
     for obj in data['object']:
         difficult_b = bool(int(obj['difficult']))
@@ -109,16 +119,32 @@ def _dict_to_tf_example(data,
         else:
             truncated.append(0)
 
+        # Classes
+        c = int(VOC_LABELS[obj['name']][0])
+        classes.append(c)
+        classes_text.append(obj['name'].encode('utf8'))
+
         # Normalized bounding boxes
-        xmin.append(float(obj['bndbox']['xmin']) / width)
-        ymin.append(float(obj['bndbox']['ymin']) / height)
-        xmax.append(float(obj['bndbox']['xmax']) / width)
-        ymax.append(float(obj['bndbox']['ymax']) / height)
+        box_xmin = float(obj['bndbox']['xmin']) / width
+        box_ymin = float(obj['bndbox']['ymin']) / height
+        box_xmax = float(obj['bndbox']['xmax']) / width
+        box_ymax = float(obj['bndbox']['ymax']) / height
+
+        xmin.append(box_xmin)
+        ymin.append(box_ymin)
+        xmax.append(box_xmax)
+        ymax.append(box_ymax)
+
         object_count = len(xmin)
 
-        # Classes
-        classes.append(int(VOC_LABELS[obj['name']][0]))
-        classes_text.append(obj['name'].encode('utf8'))
+        box = create_box(box_xmin, box_ymin, box_xmax, box_ymax, c)
+        boxes.append(box)
+
+    boxes = np.array(boxes)
+    detectors_mask, matching_true_boxes = preprocess_true_boxes(boxes)
+
+    detectors_mask_1d = detectors_mask.reshape((-1))
+    matching_boxes_1d = matching_true_boxes.reshape((-1))
 
     features = {
         # Image file
@@ -147,10 +173,14 @@ def _dict_to_tf_example(data,
         'image/object/bbox/xmax': float_list_feature(xmax),
         'image/object/bbox/ymin': float_list_feature(ymin),
         'image/object/bbox/ymax': float_list_feature(ymax),
-        'image/object/count': int64_feature(object_count)
+        'image/object/count': int64_feature(object_count),
+        'image/object/detectors_mask': float_list_feature(detectors_mask_1d),
+        'image/object/matching_true_boxes':
+        float_list_feature(matching_boxes_1d)
     }
 
-    return tf.train.Example(features=tf.train.Features(feature=features))
+    example = tf.train.Example(features=tf.train.Features(feature=features))
+    return example
 
 
 def create_record_file(data_dir, output_file, year, split_name):

@@ -5,6 +5,11 @@ from utils import tf_image
 
 slim = tf.contrib.slim
 
+IMAGE_H, IMAGE_W = 416, 416
+GRID_H, GRID_W = 13, 13
+BOX = 5
+CLASSES = 20
+
 
 def process_bboxes_and_labels(bboxes, labels):
     '''
@@ -96,9 +101,7 @@ def preprocess_for_train(image,
         # image = tf.multiply(image, 1. / 127.5)
         # image = tf.subtract(image, 1.0)
 
-        # Convert and concat bboxes and labels
-        bboxes_labels = process_bboxes_and_labels(bboxes, labels)
-
+    bboxes_labels = process_bboxes_and_labels(bboxes, labels)
     return image, bboxes_labels
 
 

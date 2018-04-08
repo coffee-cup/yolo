@@ -19,7 +19,11 @@ def main(config):
                             'val')
 
     yolo = Yolo(config, dataset_train, dataset_val)
-    yolo.train()
+
+    try:
+        yolo.train()
+    except tf.errors.OutOfRangeError:
+        pass
 
     return
 

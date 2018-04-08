@@ -43,15 +43,18 @@ class Yolo(object):
         provider_va = slim.dataset_data_provider.DatasetDataProvider(
             dataset_val, num_readers=1, shuffle=False)
 
-        [image_tr, labels_tr,
-         bboxes_tr] = provider_tr.get(['image', 'object/label', 'object/bbox'])
+        [image_tr, labels_tr, bboxes_tr, detectors_mask,
+         matching_true_boxes] = provider_tr.get([
+             'image', 'object/label', 'object/bbox', 'object/detectors_mask',
+             'object/matching_true_boxes'
+         ])
 
         [image_va, labels_va,
          bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
 
         # Preprocess
-        image_tr, bboxes_tr = preprocess_for_train(
-            image_tr, labels_tr, bboxes_tr, config.image_size)
+        image, bboxes = preprocess_for_train(image_tr, labels_tr, bboxes_tr,
+                                             config.image_size)
 
         image_va, labels_va, bboxes_va = preprocess_for_validation(
             image_va, labels_va, bboxes_va, config.image_size)
@@ -59,11 +62,13 @@ class Yolo(object):
         print('image {}'.format(image_tr))
         print('labels {}'.format(labels_tr))
         print('bboxes {}'.format(bboxes_tr))
+        print('mask {}'.format(detectors_mask))
+        print('true boxes {}'.format(matching_true_boxes))
 
         # Create batches
         batch_size = self.config.batch_size
         self.batch_tr = tf.train.batch(
-            [image_tr, bboxes_tr],
+            [image, bboxes, detectors_mask, matching_true_boxes],
             batch_size=batch_size,
             num_threads=1,
             capacity=1 * batch_size,
@@ -87,12 +92,6 @@ class Yolo(object):
         # self._build_eval()
         self._build_summary()
         self._build_writer()
-
-    def data_train(self):
-        self.data_set(name='train')
-
-    def data_val(self):
-        self.data_set(name='val')
 
     def _build_placeholder(self):
         '''Build placeholders.'''
@@ -368,11 +367,12 @@ class Yolo(object):
         conf.gpu_options.allow_growth = True
         with tf.Session(config=conf) as sess:
             print('Initializing...')
+            coord = tf.train.Coordinator()
             sess.run([
                 tf.local_variables_initializer(),
                 tf.global_variables_initializer()
             ])
-            tf.train.start_queue_runners(sess)
+            threads = tf.train.start_queue_runners(sess, coord=coord)
 
             # Add the session graph to training summary
             # so we can view in Tensorboard
@@ -382,23 +382,29 @@ class Yolo(object):
                 print('\n\n')
 
                 # Get training batch
-                images_tr, bboxes_tr = sess.run(self.batch_tr)
+                images_tr, bboxes_tr, detectors_mask, matching_true_boxes = sess.run(
+                    self.batch_tr)
 
-                print('\n\n--- Boxes')
+                print('\n--- Boxes, shape {}'.format(bboxes_tr.shape))
                 print(bboxes_tr)
 
-                res = sess.run(
-                    self.loss,
-                    feed_dict={
-                        self.images_in: images_tr,
-                        self.bboxes_in: bboxes_tr
-                    })
+                print('\n--- Mask, shape {}'.format(detectors_mask.shape))
 
-                print('\n\n--- Output')
-                print(res)
+                print('\n--- True Boxes, shape {}'.format(
+                    matching_true_boxes.shape))
 
-                print('\n\n--- Output Shape')
-                print(res.shape)
+                # res = sess.run(
+                #     self.loss,
+                #     feed_dict={
+                #         self.images_in: images_tr,
+                #         self.bboxes_in: bboxes_tr
+                #     })
+
+                # print('\n\n--- Output')
+                # print(res)
+
+                # print('\n\n--- Output Shape')
+                # print(res.shape)
 
                 # print(res)
                 # print(res[:, 0])
@@ -441,4 +447,6 @@ class Yolo(object):
                                                 res['global_step'])
                     self.summary_va.flush()
 
+            coord.request_stop()
+            coord.join(threads)
             sess.close()
