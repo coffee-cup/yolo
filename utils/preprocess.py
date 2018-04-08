@@ -2,16 +2,14 @@ import numpy as np
 
 import tensorflow as tf
 from utils import tf_image
+from utils.voc_common import (BOX, CLASSES, GRID_H, GRID_W, IMAGE_H, IMAGE_W,
+                              YOLO_ANCHORS)
 
 slim = tf.contrib.slim
 
-IMAGE_H, IMAGE_W = 416, 416
-GRID_H, GRID_W = 13, 13
-BOX = 5
-CLASSES = 20
 
-
-def process_bboxes_and_labels(bboxes, labels):
+def process_bboxes_and_labels(bboxes, labels, detectors_mask,
+                              matching_true_boxes):
     '''
     Convert bboxes in form ymin, xmin, ymax xmax
     to xcenter, ycenter, width, height, class label
@@ -31,7 +29,14 @@ def process_bboxes_and_labels(bboxes, labels):
     labels = tf.cast(tf.reshape(labels, (-1, 1)), tf.float32)
     bboxes_labels = tf.concat([center_x, center_y, width, height, labels], 1)
 
-    return bboxes_labels
+    # Reshape mask and true boxes to correct shape
+    num_anchors = len(YOLO_ANCHORS)
+    detectors_mask = tf.reshape(detectors_mask,
+                                (GRID_H, GRID_W, num_anchors, 1))
+    matching_true_boxes = tf.reshape(matching_true_boxes,
+                                     (GRID_H, GRID_W, num_anchors, 5))
+
+    return bboxes_labels, detectors_mask, matching_true_boxes
 
 
 def tf_summary_image(image, bboxes, name='image'):
@@ -45,7 +50,8 @@ def tf_summary_image(image, bboxes, name='image'):
 def preprocess_for_train(image,
                          labels,
                          bboxes,
-                         size,
+                         detectors_mask,
+                         matching_true_boxes,
                          scope='preprocessing_train'):
     """Preprocesses the given image for training.
     Note that the actual resizing scale is sampled from
@@ -79,7 +85,7 @@ def preprocess_for_train(image,
         #                                 aspect_ratio_range=CROP_RATIO_RANGE)
 
         # Resize image to output size.
-        out_shape = (size, size)
+        out_shape = (IMAGE_H, IMAGE_W)
         image = tf_image.resize_image(
             image,
             out_shape,
@@ -101,8 +107,9 @@ def preprocess_for_train(image,
         # image = tf.multiply(image, 1. / 127.5)
         # image = tf.subtract(image, 1.0)
 
-    bboxes_labels = process_bboxes_and_labels(bboxes, labels)
-    return image, bboxes_labels
+    bboxes_labels, detectors_mask, matching_true_boxes = process_bboxes_and_labels(
+        bboxes, labels, detectors_mask, matching_true_boxes)
+    return image, bboxes_labels, detectors_mask, matching_true_boxes
 
 
 def preprocess_for_validation(image,

@@ -8,26 +8,16 @@ import tensorflow.contrib.slim as slim
 from utils import *
 from utils.preprocess import (preprocess_for_train, preprocess_for_validation,
                               process_bboxes_and_labels)
+from utils.voc_common import (BOX, CLASSES, GRID_H, GRID_W, IMAGE_H, IMAGE_W,
+                              YOLO_ANCHORS)
 
-IMAGE_H, IMAGE_W = 416, 416
-GRID_H, GRID_W = 13, 13
-BOX = 5
-CLASS = 20
-CLASS_WEIGHTS = np.ones(CLASS, dtype='float32')
 OBJ_THRESHOLD = 0.3
 NMS_THRESHOLD = 0.3
-ANCHORS = [
-    0.57273, 0.677385, 1.87446, 2.06253, 3.33843, 5.47434, 7.88282, 3.52778,
-    9.77052, 9.16828
-]
 
 NO_OBJECT_SCALE = 1.0
 OBJECT_SCALE = 5.0
 COORD_SCALE = 1.0
 CLASS_SCALE = 1.0
-
-WARM_UP_BATCHES = 0
-TRUE_BOX_BUFFER = 50
 
 
 class Yolo(object):
@@ -53,11 +43,12 @@ class Yolo(object):
          bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
 
         # Preprocess
-        image, bboxes = preprocess_for_train(image_tr, labels_tr, bboxes_tr,
-                                             config.image_size)
+        image, bboxes, detectors_mask, matching_true_boxes = preprocess_for_train(
+            image_tr, labels_tr, bboxes_tr, detectors_mask,
+            matching_true_boxes)
 
         image_va, labels_va, bboxes_va = preprocess_for_validation(
-            image_va, labels_va, bboxes_va, config.image_size)
+            image_va, labels_va, bboxes_va, IMAGE_H)
 
         print('image {}'.format(image_tr))
         print('labels {}'.format(labels_tr))
@@ -96,8 +87,7 @@ class Yolo(object):
     def _build_placeholder(self):
         '''Build placeholders.'''
         self.images_in = tf.placeholder(
-            tf.float32,
-            shape=(None, self.config.image_size, self.config.image_size, 3))
+            tf.float32, shape=(None, IMAGE_W, IMAGE_H, 3))
         self.bboxes_in = tf.placeholder(tf.float32, shape=(None, None, 5))
 
     def _build_preprocessing(self):
@@ -168,11 +158,11 @@ class Yolo(object):
             cur_in = conv_layer(cur_in, 1024, 3, 'conv20')
             cur_in = passthrough_layer(cur_in, passthrough, 64, 3, 2, 'conv21')
             cur_in = conv_layer(cur_in, 1024, 3, 'conv22')
-            cur_in = conv_layer(cur_in, BOX * (4 + 1 + CLASS), 1, 'conv23')
+            cur_in = conv_layer(cur_in, BOX * (4 + 1 + CLASSES), 1, 'conv23')
 
             y = tf.reshape(
                 cur_in,
-                shape=(-1, GRID_H, GRID_W, BOX, 4 + 1 + CLASS),
+                shape=(-1, GRID_H, GRID_W, BOX, 4 + 1 + CLASSES),
                 name='y')
 
             return y
@@ -211,7 +201,7 @@ class Yolo(object):
 
             # adjust w and h
             pred_box_wh = tf.exp(y_pred[..., 2:4]) * np.reshape(
-                ANCHORS, [1, 1, 1, BOX, 2])
+                YOLO_ANCHORS, [1, 1, 1, BOX, 2])
 
             # adjust confidence
             pred_box_conf = tf.sigmoid(y_pred[..., 4])

@@ -97,12 +97,6 @@ train_arg.add_argument(
 model_arg = add_argument_group("Model")
 
 model_arg.add_argument(
-    "--image_size",
-    type=int,
-    default=416,
-    help="The size to reshape all images to")
-
-model_arg.add_argument(
     "--reg_lambda", type=float, default=1e-4, help="Regularization strength")
 
 model_arg.add_argument(
