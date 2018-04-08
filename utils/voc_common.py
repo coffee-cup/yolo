@@ -90,13 +90,19 @@ def preprocess_true_boxes(true_boxes):
 
         if best_iou > 0:
             detectors_mask[i, j, best_anchor] = 1
-            adjusted_box = np.array(
-                [
-                    box[0] - j, box[1] - i,
-                    np.log(box[2] / anchors[best_anchor][0]),
-                    np.log(box[3] / anchors[best_anchor][1]), box_class
-                ],
-                dtype=np.float32)
+            # adjusted_box = np.array(
+            #     [
+            #         box[0] - j, box[1] - i,
+            #         np.log(box[2] / anchors[best_anchor][0]),
+            #         np.log(box[3] / anchors[best_anchor][1]), box_class
+            #     ],
+            #     dtype=np.float32)
+            x = box[0] - j
+            y = box[1] - i
+            w = box[2] / anchors[best_anchor][0]
+            h = box[3] / anchors[best_anchor][1]
+            adjusted_box = np.array([x, y, w, h, box_class])
+
             matching_true_boxes[i, j, best_anchor] = adjusted_box
 
     return detectors_mask, matching_true_boxes

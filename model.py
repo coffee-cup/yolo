@@ -218,11 +218,6 @@ class Yolo(object):
             # adjust class probabilities
             pred_box_class = y_pred[..., 5:]
 
-            print('pred box xy  {}'.format(pred_box_xy.shape))
-            print('pred box wh  {}'.format(pred_box_wh.shape))
-            print('pred conf    {}'.format(pred_box_conf.shape))
-            print('pred classes {}'.format(pred_box_class.shape))
-
             ###
             # Adjust Ground Truth
             ###
@@ -243,8 +238,24 @@ class Yolo(object):
             pred_maxes = pred_box_xy + pred_wh_half
 
             intersect_mins = tf.maximum(pred_mins, true_mins)
+            intersect_maxes = tf.minimum(pred_maxes, true_maxes)
+            intersect_wh = tf.maximum(intersect_maxes - intersect_mins, 0.)
+            intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
 
-            return intersect_mins
+            true_areas = true_box_wh[..., 0] * true_box_wh[..., 1]
+            pred_areas = pred_box_wh[..., 0] * pred_box_wh[..., 1]
+
+            union_areas = pred_areas + true_areas - intersect_areas
+            iou_scores = tf.truediv(intersect_areas, union_areas)
+
+            true_box_conf = iou_scores * y_true[..., 4]
+
+            # Doesn't work, need per class probabilities
+            #  1 in grid cell and class index where object is, 0 otherwise
+            # adjust class probabilities
+            # true_box_class = tf.argmax(y_true[..., 5:], -1)
+
+            return iou_scores
 
     def _build_loss_2(self):
         '''Build our loss.'''
