@@ -34,7 +34,7 @@ class Yolo(object):
             dataset_val, num_readers=1, shuffle=False)
 
         [image_tr, labels_tr, bboxes_tr, detectors_mask,
-         matching_true_boxes] = provider_tr.get([
+         true_boxes] = provider_tr.get([
              'image', 'object/label', 'object/bbox', 'object/detectors_mask',
              'object/matching_true_boxes'
          ])
@@ -43,9 +43,8 @@ class Yolo(object):
          bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
 
         # Preprocess
-        image, bboxes, detectors_mask, matching_true_boxes = preprocess_for_train(
-            image_tr, labels_tr, bboxes_tr, detectors_mask,
-            matching_true_boxes)
+        image, bboxes, detectors_mask, true_boxes = preprocess_for_train(
+            image_tr, labels_tr, bboxes_tr, detectors_mask, true_boxes)
 
         image_va, labels_va, bboxes_va = preprocess_for_validation(
             image_va, labels_va, bboxes_va, IMAGE_H)
@@ -54,12 +53,12 @@ class Yolo(object):
         print('labels {}'.format(labels_tr))
         print('bboxes {}'.format(bboxes_tr))
         print('mask {}'.format(detectors_mask))
-        print('true boxes {}'.format(matching_true_boxes))
+        print('true boxes {}'.format(true_boxes))
 
         # Create batches
         batch_size = self.config.batch_size
         self.batch_tr = tf.train.batch(
-            [image, bboxes, detectors_mask, matching_true_boxes],
+            [image, bboxes, detectors_mask, true_boxes],
             batch_size=batch_size,
             num_threads=1,
             capacity=1 * batch_size,
@@ -89,6 +88,12 @@ class Yolo(object):
         self.images_in = tf.placeholder(
             tf.float32, shape=(None, IMAGE_W, IMAGE_H, 3))
         self.bboxes_in = tf.placeholder(tf.float32, shape=(None, None, 5))
+
+        num_anchors = len(YOLO_ANCHORS)
+        self.detectors_mask = tf.placeholder(
+            tf.float32, shape=(None, GRID_H, GRID_W, num_anchors, 1))
+        self.true_boxes = tf.placeholder(
+            tf.float32, shape=(None, GRID_H, GRID_W, num_anchors, 5))
 
     def _build_preprocessing(self):
         '''Build preprocessing related graph.'''
@@ -169,12 +174,16 @@ class Yolo(object):
 
     def _build_loss(self):
         with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
-            y_true = self.bboxes_in
-            y_pred = self.model
+            bboxes = self.bboxes_in
+            y_true = self.true_boxes
+            detectors_mask = self.detectors_mask
             batch_size = tf.shape(self.bboxes_in)[0]
+
+            y_pred = self.model
 
             print('model output shape {}'.format(self.model.shape))
             print('bboxes in shape {}'.format(self.bboxes_in.shape))
+            print('y_true shape {}'.format(y_true.shape))
 
             mask_shape = tf.shape(y_true)[:4]
             print('mask shape {}'.format(mask_shape))
@@ -233,7 +242,9 @@ class Yolo(object):
             pred_mins = pred_box_xy - pred_wh_half
             pred_maxes = pred_box_xy + pred_wh_half
 
-            return mask_shape
+            intersect_mins = tf.maximum(pred_mins, true_mins)
+
+            return intersect_mins
 
     def _build_loss_2(self):
         '''Build our loss.'''
@@ -372,7 +383,7 @@ class Yolo(object):
                 print('\n\n')
 
                 # Get training batch
-                images_tr, bboxes_tr, detectors_mask, matching_true_boxes = sess.run(
+                images_tr, bboxes_tr, detectors_mask, true_boxes = sess.run(
                     self.batch_tr)
 
                 print('\n--- Boxes, shape {}'.format(bboxes_tr.shape))
@@ -380,18 +391,19 @@ class Yolo(object):
 
                 print('\n--- Mask, shape {}'.format(detectors_mask.shape))
 
-                print('\n--- True Boxes, shape {}'.format(
-                    matching_true_boxes.shape))
+                print('\n--- True Boxes, shape {}'.format(true_boxes.shape))
 
-                # res = sess.run(
-                #     self.loss,
-                #     feed_dict={
-                #         self.images_in: images_tr,
-                #         self.bboxes_in: bboxes_tr
-                #     })
+                res = sess.run(
+                    self.loss,
+                    feed_dict={
+                        self.images_in: images_tr,
+                        self.bboxes_in: bboxes_tr,
+                        self.detectors_mask: detectors_mask,
+                        self.true_boxes: true_boxes
+                    })
 
-                # print('\n\n--- Output')
-                # print(res)
+                print('\n\n--- Output')
+                print(res)
 
                 # print('\n\n--- Output Shape')
                 # print(res.shape)
