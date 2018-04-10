@@ -29,6 +29,7 @@ class Yolo(object):
 
     def __init__(self, config, dataset_train, dataset_val):
         self.config = config
+        self.debug = True
 
         # Load dataset provider
         provider_tr = slim.dataset_data_provider.DatasetDataProvider(
@@ -320,78 +321,24 @@ class Yolo(object):
 
             loss = loss_xy + loss_wh + loss_conf + loss_class
 
-            return loss
+            nb_true_box = tf.reduce_sum(y_true[..., 4])
+            nb_pred_box = tf.reduce_sum(
+                tf.to_float(true_box_conf > 0.5) *
+                tf.to_float(pred_box_conf > 0.3))
 
-    def _build_loss_2(self):
-        '''Build our loss.'''
-
-        with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
-            pred_boxes = self.model[:, :, :, 0:4]
-            real_boxes = self.bboxes_in[:, :, 0:4]
-
-            pred_boxes = tf.reshape(pred_boxes, (-1, 1, 4))
-            real_boxes = tf.reshape(real_boxes, (1, -1, 4))
-
-            x0_p = tf.minimum(pred_boxes[:, :, 0], pred_boxes[:, :, 2])
-            x1_p = tf.maximum(pred_boxes[:, :, 0], pred_boxes[:, :, 2])
-            y0_p = tf.minimum(pred_boxes[:, :, 1], pred_boxes[:, :, 3])
-            y1_p = tf.maximum(pred_boxes[:, :, 1], pred_boxes[:, :, 3])
-
-            x0_r = tf.minimum(real_boxes[:, :, 0], real_boxes[:, :, 2])
-            x1_r = tf.maximum(real_boxes[:, :, 0], real_boxes[:, :, 2])
-            y0_r = tf.minimum(real_boxes[:, :, 1], real_boxes[:, :, 3])
-            y1_r = tf.maximum(real_boxes[:, :, 1], real_boxes[:, :, 3])
-
-            x0 = tf.maximum(x0_p, x0_r)
-            x1 = tf.minimum(x1_p, x1_r)
-            y0 = tf.maximum(y0_p, y0_r)
-            y1 = tf.minimum(y1_p, y1_r)
-
-            inter = (x1 - x0) * (y1 - y0)
-            union = (x1_p - x0_p) * (y1_p - y0_p) + (x1_p - x0_p) * (
-                y1_p - y0_p) - inter
-
-            iou = inter / (union + 1)
-
-            min_iou = tf.reduce_min(iou, axis=1)
-            loss = tf.reduce_mean(min_iou)
-
-            box_iou_stack = tf.concat(
-                [
-                    tf.reshape(pred_boxes, (tf.shape(pred_boxes)[0], 4)),
-                    tf.expand_dims(min_iou, 1)
-                ],
-                axis=1)
-
-            batch_size = tf.shape(self.bboxes_in)[0]
-
-            # reshape box predictions
-
-            # One bounding box prediction per cell
-            self.boxes = tf.reshape(pred_boxes, (batch_size, -1, 4))
-
-            # The iou prediction for the bounding boxes
-            self.min_iou = tf.reshape(min_iou, (batch_size, -1, 1))
-
-            # The indicies for the best bounding box in each batch
-            self.best_index = tf.argmin(
-                tf.reshape(min_iou, (batch_size, -1, 1)), axis=1)
-
-            batch_range = tf.expand_dims(tf.range(batch_size), 1)
-
-            # Get the top bounding box per batch
-            indicies = tf.concat(
-                [batch_range, tf.cast(self.best_index, tf.int32)], axis=1)
-            self.best_boxes = tf.gather_nd(self.boxes, indicies)
-
-            # self.best_boxes = tf.reduce_min(self.boxes_iou, axis=[4, 2])
-            # self.thing = tf.concat([self.boxes, self.min_iou], axis=1)
-            # self.best_boxes = tf.gather_nd(
-            #     self.boxes, [np.arange(batch_size), self.best_index])
-
-            # imin = tf.argmin(box_iou_stack, 1)
-            # self.best_box = box_iou_stack[imin[4], :][0:4]
-            # self.best_box = tf.reshape(self.best_box, (1, 1, 4))
+            if self.debug:
+                loss = tf.Print(
+                    loss, [loss_xy], message='Loss XY \t', summarize=1000)
+                loss = tf.Print(
+                    loss, [loss_wh], message='Loss WH \t', summarize=1000)
+                loss = tf.Print(
+                    loss, [loss_conf], message='Loss Conf \t', summarize=1000)
+                loss = tf.Print(
+                    loss, [loss_class],
+                    message='Loss Class \t',
+                    summarize=1000)
+                loss = tf.Print(
+                    loss, [loss], message='Total Loss \t', summarize=1000)
 
             tf.summary.scalar('loss', loss)
             return loss
@@ -456,21 +403,22 @@ class Yolo(object):
             self.summary_tr.add_graph(sess.graph)
 
             for idx_epoch in trange(self.config.max_iter):
-                print('\n\n')
+                print('\n')
 
                 # Get training batch
                 images_tr, bboxes_tr, y_true = sess.run(self.batch_tr)
 
-                print('\n--- Boxes, shape {}'.format(bboxes_tr.shape))
-                print(bboxes_tr)
+                # print('\n--- Boxes, shape {}'.format(bboxes_tr.shape))
+                # print(bboxes_tr)
 
-                print('\n--- y_true, shape {}'.format(y_true.shape))
+                # print('\n--- y_true, shape {}'.format(y_true.shape))
 
                 res = sess.run(
                     fetches={
                         'loss': self.loss,
                         'optimizer': self.optimizer,
                         'global_step': self.global_step,
+                        'summary': self.summary_op
                     },
                     feed_dict={
                         self.images_in: images_tr,
@@ -478,29 +426,17 @@ class Yolo(object):
                         self.y_true: y_true
                     })
 
-                print('\n\n--- Loss')
-                print(res['loss'])
+                # print('\n\n--- Loss')
+                # print(res['loss'])
 
-                print('\n\n--- Loss Shape')
-                print(res['loss'].shape)
+                # print('\n\n--- Loss Shape')
+                # print(res['loss'].shape)
 
                 # print(res)
                 # print(res[:, 0])
 
-                # res = sess.run(
-                #     fetches={
-                #         # 'optimizer': self.optimizer,
-                #         'global_step': self.global_step
-                #         # 'summary': self.summary_op
-                #     },
-                #     feed_dict={
-                #         self.images_in: images_tr,
-                #         self.labels_in: labels_tr,
-                #         self.bboxes_in: bboxes_tr
-                #     })
-
-                # self.summary_tr.add_summary(res['summary'], res['global_step'])
-                # self.summary_tr.flush()
+                self.summary_tr.add_summary(res['summary'], res['global_step'])
+                self.summary_tr.flush()
 
                 # if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
                 #     images_va, labels_va, bboxes_va = sess.run(self.batch_va)

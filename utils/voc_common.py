@@ -50,21 +50,14 @@ def preprocess_true_boxes(true_boxes):
     y_true = np.zeros(
         (GRID_H, GRID_W, num_anchors, 4 + 1 + CLASSES), dtype=np.float32)
 
-    # num_box_params = true_boxes.shape[1]
-    # detectors_mask = np.zeros(
-    #     (conv_height, conv_width, num_anchors, 1), dtype=np.float32)
-    # matching_true_boxes = np.zeros(
-    #     (conv_height, conv_width, num_anchors, num_box_params),
-    #     dtype=np.float32)
-
     for box_index, box in enumerate(true_boxes):
         box_class = int(box[4:5])
 
         # Scale box by grid
-        box[0] /= GRID_W  # center x
-        box[1] /= GRID_H  # center y
-        box[2] /= GRID_W  # width
-        box[3] /= GRID_H  # height
+        box[0] *= GRID_W  # center x
+        box[1] *= GRID_H  # center y
+        box[2] *= GRID_W  # width
+        box[3] *= GRID_H  # height
         box = box[0:4]
 
         grid_x = np.floor(box[1]).astype('int')
@@ -97,24 +90,7 @@ def preprocess_true_boxes(true_boxes):
             y_true[grid_y, grid_x, best_anchor, 4] = 1
             y_true[grid_y, grid_x, best_anchor, 5 + box_class - 1] = 1
 
-            # detectors_mask[i, j, best_anchor] = 1
-            # adjusted_box = np.array(
-            #     [
-            #         box[0] - j, box[1] - i,
-            #         np.log(box[2] / anchors[best_anchor][0]),
-            #         np.log(box[3] / anchors[best_anchor][1]), box_class
-            #     ],
-            #     dtype=np.float32)
-            # x = box[0] - grid_x
-            # y = box[1] - grid_y
-            # w = box[2] / anchors[best_anchor][0]
-            # h = box[3] / anchors[best_anchor][1]
-            # adjusted_box = np.array([x, y, w, h, box_class])
-
-            # matching_true_boxes[i, j, best_anchor] = adjusted_box
-
     return y_true
-    # return detectors_mask, matching_true_boxes
 
 
 def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,

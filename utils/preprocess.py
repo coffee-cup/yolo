@@ -26,10 +26,10 @@ def process_bboxes_and_labels(bboxes, labels):
     height = ymax - ymin
 
     # Scale to grid
-    center_x /= GRID_W
-    center_y /= GRID_H
-    width /= GRID_W
-    height /= GRID_H
+    center_x *= GRID_W
+    center_y *= GRID_H
+    width *= GRID_W
+    height *= GRID_H
 
     labels = tf.cast(tf.reshape(labels, (-1, 1)), tf.float32)
     bboxes_labels = tf.concat([center_x, center_y, width, height, labels], 1)
