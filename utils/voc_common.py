@@ -177,6 +177,7 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         num_samples=split_to_sizes[split_name],
         items_to_descriptions=items_to_descriptions,
         num_classes=num_classes,
+        repeat=True,
         labels_to_names=labels_to_names)
 
 

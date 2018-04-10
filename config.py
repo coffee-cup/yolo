@@ -92,6 +92,12 @@ train_arg.add_argument(
     default=False,
     help="Whether or not to print the predicted validation bounding boxes")
 
+train_arg.add_argument(
+    '--allow_restore',
+    type=str2bool,
+    default=False,
+    help='Whether or not to allow restoring model from checkpoint')
+
 # ----------------------------------------
 # Arguments for model
 model_arg = add_argument_group("Model")

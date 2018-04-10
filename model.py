@@ -61,7 +61,7 @@ class Yolo(object):
         self.batch_tr = tf.train.batch(
             [image_tr, bboxes_tr, y_true_tr],
             batch_size=batch_size,
-            num_threads=1,
+            num_threads=4,
             capacity=1 * batch_size,
             dynamic_pad=True,
             allow_smaller_final_batch=True)
@@ -95,6 +95,8 @@ class Yolo(object):
             tf.float32,
             shape=(None, GRID_H, GRID_W, num_anchors, 4 + 1 + CLASSES))
 
+        self.training = tf.placeholder(tf.bool, shape=())
+
     def _build_preprocessing(self):
         '''Build preprocessing related graph.'''
         pass
@@ -110,10 +112,12 @@ class Yolo(object):
                     filters,
                     kernel_size,
                     padding='same',
-                    kernel_initializer=tf.contrib.layers.
-                    xavier_initializer_conv2d(),
+                    use_bias=False,
+                    kernel_initializer=tf.truncated_normal_initializer(
+                        0.0, 0.01),
                     bias_initializer=tf.zeros_initializer())
-                x = tf.nn.relu(x)
+                # x = tf.layers.batch_normalization(x, training=self.training)
+                x = tf.nn.leaky_relu(x, alpha=0.2)
 
             return x
 
@@ -183,6 +187,7 @@ class Yolo(object):
             true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
 
             mask_shape = tf.shape(y_true)[:4]
+            total_recall = tf.Variable(0.)
 
             cell_x = tf.to_float(
                 tf.reshape(
@@ -286,7 +291,7 @@ class Yolo(object):
 
             best_ious = tf.reduce_max(iou_scores, axis=4)
             conf_mask = conf_mask + tf.to_float(best_ious < 0.6) * (
-                1 - y_true[..., 4]) * OBJECT_SCALE
+                1 - y_true[..., 4]) * NO_OBJECT_SCALE
 
             # penalize the confidence of the boxes, which are reponsible for corresponding ground truth box
             conf_mask = conf_mask + y_true[..., 4] * OBJECT_SCALE
@@ -321,6 +326,9 @@ class Yolo(object):
                 tf.to_float(true_box_conf > 0.5) *
                 tf.to_float(pred_box_conf > 0.3))
 
+            current_recall = nb_pred_box / (nb_true_box + 1e-6)
+            total_recall = tf.assign_add(total_recall, current_recall)
+
             if self.debug:
                 loss = tf.Print(
                     loss, [loss_xy], message='Loss XY \t', summarize=1000)
@@ -336,6 +344,7 @@ class Yolo(object):
                     loss, [loss], message='Total Loss \t', summarize=1000)
 
             tf.summary.scalar('loss', loss)
+            tf.summary.scalar('recall', total_recall)
             return loss
 
     def _build_optim(self):
@@ -369,11 +378,11 @@ class Yolo(object):
             os.path.join(self.config.log_dir, 'valid'))
 
         # Create savers (one for current, one for best)
-        # self.saver_cur = tf.train.Saver()
+        self.saver_cur = tf.train.Saver()
         # self.saver_best = tf.train.Saver()
 
         # # Save file for the current model
-        # self.save_file_cur = os.path.join(self.config.log_dir, 'model')
+        self.save_file_cur = os.path.join(self.config.log_dir, 'model')
 
         # # Save file for the best model
         # self.save_file_best = os.path.join(self.config.save_dir, 'model')
@@ -397,7 +406,18 @@ class Yolo(object):
             # so we can view in Tensorboard
             self.summary_tr.add_graph(sess.graph)
 
-            for idx_epoch in trange(self.config.max_iter):
+            latest_checkpoint = tf.train.latest_checkpoint(self.config.log_dir)
+            b_resume = latest_checkpoint is not None and self.config.allow_restore
+            if b_resume:
+                print('Restoring from {}...'.format(self.config.log_dir))
+                self.saver_cur.restore(sess, latest_checkpoint)
+                res = sess.run(fetches={'global_step': self.global_step})
+
+                step = res['global_step']
+            else:
+                step = 0
+
+            for idx_epoch in trange(step, self.config.max_iter):
                 # Get training batch
                 images_tr, bboxes_tr, y_true_tr = sess.run(self.batch_tr)
 
@@ -406,18 +426,37 @@ class Yolo(object):
 
                 # print('\n--- y_true, shape {}'.format(y_true.shape))
 
-                res = sess.run(
-                    fetches={
+                b_write_summary = (
+                    step is 0) or (step + 1) % self.config.report_freq is 0
+                if b_write_summary:
+                    fetches = {
                         'loss': self.loss,
                         'optimizer': self.optimizer,
                         'global_step': self.global_step,
                         'summary': self.summary_op
-                    },
+                    }
+                else:
+                    fetches = {'optimizer': self.optimizer}
+
+                res = sess.run(
+                    fetches=fetches,
                     feed_dict={
                         self.images_in: images_tr,
                         self.bboxes_in: bboxes_tr,
-                        self.y_true: y_true_tr
+                        self.y_true: y_true_tr,
+                        self.training: True
                     })
+
+                if res.get('summary') is not None:
+                    self.summary_tr.add_summary(res['summary'],
+                                                res['global_step'])
+                    self.summary_tr.flush()
+
+                    self.saver_cur.save(
+                        sess,
+                        self.save_file_cur,
+                        global_step=self.global_step,
+                        write_meta_graph=False)
 
                 # print('\n\n--- Loss')
                 # print(res['loss'])
@@ -438,11 +477,6 @@ class Yolo(object):
                 # image = draw_boxes(image, boxes)
                 # save_image(image, 'test.jpeg')
 
-                # break
-
-                self.summary_tr.add_summary(res['summary'], res['global_step'])
-                self.summary_tr.flush()
-
                 if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
                     images_va, bboxes_va, y_true_va = sess.run(self.batch_va)
 
@@ -455,7 +489,8 @@ class Yolo(object):
                         feed_dict={
                             self.images_in: images_va,
                             self.bboxes_in: bboxes_va,
-                            self.y_true: y_true_va
+                            self.y_true: y_true_va,
+                            self.training: False
                         })
 
                     image = images_va[0]
