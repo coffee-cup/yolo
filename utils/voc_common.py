@@ -214,7 +214,7 @@ class BoundBox:
         return np.array([self.xmin, self.ymin, self.xmax, self.ymax])
 
     def colour(self):
-        c = to_rgb(colours[self.label][1:])
+        c = to_rgb(colours[self.label - 1][1:])
         return (c[0], c[1], c[2])
 
     def __str__(self):
@@ -233,7 +233,7 @@ def draw_boxes(image, boxes):
         c = box.colour()
 
         cv2.rectangle(image, (xmin, ymin), (xmax, ymax), c, 2)
-        cv2.rectangle(image, (xmin, ymin - 15), (xmin + 100, ymin), c, -1)
+        cv2.rectangle(image, (xmin - 1, ymin - 15), (xmin + 100, ymin), c, -1)
         cv2.putText(
             image,
             box.obj_name() + ' ' + str(box.score), (xmin + 1, ymin - 4),
