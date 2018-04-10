@@ -62,7 +62,7 @@ class Yolo(object):
             [image_tr, bboxes_tr, y_true_tr],
             batch_size=batch_size,
             num_threads=4,
-            capacity=1 * batch_size,
+            capacity=2 * batch_size,
             dynamic_pad=True,
             allow_smaller_final_batch=True)
 
@@ -115,10 +115,10 @@ class Yolo(object):
                     use_bias=False,
                     kernel_initializer=tf.truncated_normal_initializer(
                         0.0, 0.01),
+                    kernel_regularizer=slim.l2_regularizer(0.0005),
                     bias_initializer=tf.zeros_initializer())
                 # x = tf.layers.batch_normalization(x, training=self.training)
-                # x = tf.nn.leaky_relu(x, alpha=0.2)
-                x = tf.nn.relu(x)
+                x = tf.nn.leaky_relu(x, alpha=0.2)
 
             return x
 
@@ -514,8 +514,6 @@ class Yolo(object):
                 #     self.summary_va.add_summary(res['summary'],
                 #                                 res['global_step'])
                 #     self.summary_va.flush()
-
-                break
 
             coord.request_stop()
             coord.join(threads)
