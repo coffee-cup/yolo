@@ -45,6 +45,17 @@ labels_to_names = {}
 for k, v in VOC_LABELS.items():
     labels_to_names[v[0]] = k
 
+colours = [
+    '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
+    '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39',
+    '#ffeb3b', '#ffc107', '#ff9800', '#ff5722', '#795548', '#9e9e9e',
+    '#607d8b', '#00ff00'
+]
+
+
+def to_rgb(h):
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
 
 def preprocess_true_boxes(true_boxes):
     '''true_boxes is list of bounding boxes in form [x, y, w, h]'''
@@ -202,6 +213,10 @@ class BoundBox:
     def coord_array(self):
         return np.array([self.xmin, self.ymin, self.xmax, self.ymax])
 
+    def colour(self):
+        c = to_rgb(colours[self.label][1:])
+        return (c[0], c[1], c[2])
+
     def __str__(self):
         return str(self.coord_array()) + ' ' + self.obj_name()
 
@@ -215,14 +230,16 @@ def draw_boxes(image, boxes):
         ymin = int(box.ymin * image_h)
         xmax = int(box.xmax * image_w)
         ymax = int(box.ymax * image_h)
+        c = box.colour()
 
-        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), c, 2)
+        cv2.rectangle(image, (xmin, ymin - 15), (xmin + 100, ymin), c, -1)
         cv2.putText(
             image,
-            box.obj_name() + ' ' + str(box.score), (xmin, ymin - 8),
+            box.obj_name() + ' ' + str(box.score), (xmin + 1, ymin - 4),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1e-3 * image_h, (0, 255, 0),
-            2,
+            1e-3 * image_h, (255, 255, 255),
+            1,
             lineType=cv2.LINE_AA)
 
     return image

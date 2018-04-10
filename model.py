@@ -117,7 +117,8 @@ class Yolo(object):
                         0.0, 0.01),
                     bias_initializer=tf.zeros_initializer())
                 # x = tf.layers.batch_normalization(x, training=self.training)
-                x = tf.nn.leaky_relu(x, alpha=0.2)
+                # x = tf.nn.leaky_relu(x, alpha=0.2)
+                x = tf.nn.relu(x)
 
             return x
 
@@ -513,6 +514,8 @@ class Yolo(object):
                 #     self.summary_va.add_summary(res['summary'],
                 #                                 res['global_step'])
                 #     self.summary_va.flush()
+
+                break
 
             coord.request_stop()
             coord.join(threads)
