@@ -9,8 +9,8 @@ from utils import *
 from utils.preprocess import (preprocess_for_train, preprocess_for_validation,
                               process_bboxes_and_labels)
 from utils.voc_common import (BOX, CLASSES, GRID_H, GRID_W, IMAGE_H, IMAGE_W,
-                              YOLO_ANCHORS, decode_netout, draw_boxes,
-                              preprocess_true_boxes, save_image)
+                              YOLO_ANCHORS, combine_images, decode_netout,
+                              draw_boxes, preprocess_true_boxes, save_image)
 
 OBJ_THRESHOLD = 0.3
 NMS_THRESHOLD = 0.3
@@ -28,31 +28,29 @@ CLASS_SCALE = 1.0
 class Yolo(object):
     '''Yolo network'''
 
-    def __init__(self, config, dataset_train, dataset_val):
+    def __init__(self, config, dataset_train, dataset_val, debug=False):
         self.config = config
-        self.debug = True
+        self.debug = debug
 
         # Load dataset provider
         provider_tr = slim.dataset_data_provider.DatasetDataProvider(
             dataset_train, num_readers=1, shuffle=True)
 
         provider_va = slim.dataset_data_provider.DatasetDataProvider(
-            dataset_val, num_readers=1, shuffle=False)
+            dataset_val, num_readers=1, shuffle=True)
 
-        [image_tr, labels_tr, bboxes_tr, y_true] = provider_tr.get(
+        [image_tr, labels_tr, bboxes_tr, y_true_tr] = provider_tr.get(
             ['image', 'object/label', 'object/bbox', 'object/y_true'])
 
-        [image_va, labels_va,
-         bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
+        [image_va, labels_va, bboxes_va, y_true_va] = provider_va.get(
+            ['image', 'object/label', 'object/bbox', 'object/y_true'])
 
         # Preprocess
-        image, bboxes, y_true = preprocess_for_train(image_tr, labels_tr,
-                                                     bboxes_tr, y_true)
-        # image, bboxes, detectors_mask, true_boxes = preprocess_for_train(
-        #     image_tr, labels_tr, bboxes_tr, detectors_mask, true_boxes)
+        image_tr, bboxes_tr, y_true_tr = preprocess_for_train(
+            image_tr, labels_tr, bboxes_tr, y_true_tr)
 
-        image_va, labels_va, bboxes_va = preprocess_for_validation(
-            image_va, labels_va, bboxes_va, IMAGE_H)
+        image_va, bboxes_va, y_true_va = preprocess_for_validation(
+            image_va, labels_va, bboxes_va, y_true_va)
 
         print('image {}'.format(image_tr))
         print('labels {}'.format(labels_tr))
@@ -61,7 +59,7 @@ class Yolo(object):
         # Create batches
         batch_size = self.config.batch_size
         self.batch_tr = tf.train.batch(
-            [image, bboxes, y_true],
+            [image_tr, bboxes_tr, y_true_tr],
             batch_size=batch_size,
             num_threads=1,
             capacity=1 * batch_size,
@@ -69,7 +67,7 @@ class Yolo(object):
             allow_smaller_final_batch=True)
 
         self.batch_va = tf.train.batch(
-            [image_va, labels_va, bboxes_va],
+            [image_va, bboxes_va, y_true_va],
             # batch_size=batch_size,
             batch_size=1,
             num_threads=1,
@@ -183,10 +181,6 @@ class Yolo(object):
             batch_size = tf.shape(self.bboxes_in)[0]
             true_boxes = bboxes[..., 0:4]
             true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
-
-            print('model output shape {}'.format(self.model.shape))
-            print('bboxes in shape {}'.format(self.bboxes_in.shape))
-            print('y_true shape {}'.format(y_true.shape))
 
             mask_shape = tf.shape(y_true)[:4]
 
@@ -404,28 +398,26 @@ class Yolo(object):
             self.summary_tr.add_graph(sess.graph)
 
             for idx_epoch in trange(self.config.max_iter):
-                print('\n')
-
                 # Get training batch
-                images_tr, bboxes_tr, y_true = sess.run(self.batch_tr)
+                images_tr, bboxes_tr, y_true_tr = sess.run(self.batch_tr)
 
                 # print('\n--- Boxes, shape {}'.format(bboxes_tr.shape))
                 # print(bboxes_tr)
 
                 # print('\n--- y_true, shape {}'.format(y_true.shape))
 
-                # res = sess.run(
-                #     fetches={
-                #         'loss': self.loss,
-                #         'optimizer': self.optimizer,
-                #         'global_step': self.global_step,
-                #         'summary': self.summary_op
-                #     },
-                #     feed_dict={
-                #         self.images_in: images_tr,
-                #         self.bboxes_in: bboxes_tr,
-                #         self.y_true: y_true
-                #     })
+                res = sess.run(
+                    fetches={
+                        'loss': self.loss,
+                        'optimizer': self.optimizer,
+                        'global_step': self.global_step,
+                        'summary': self.summary_op
+                    },
+                    feed_dict={
+                        self.images_in: images_tr,
+                        self.bboxes_in: bboxes_tr,
+                        self.y_true: y_true_tr
+                    })
 
                 # print('\n\n--- Loss')
                 # print(res['loss'])
@@ -436,37 +428,49 @@ class Yolo(object):
                 # print(res)
                 # print(res[:, 0])
 
-                image = images_tr[0]
-                boxes = bboxes_tr[0]
+                # image = images_tr[0]
+                # boxes = bboxes_tr[0]
 
-                print(boxes)
+                # print(boxes)
 
-                netout = preprocess_true_boxes(boxes)
-                boxes = decode_netout(netout)
-                image = draw_boxes(image, boxes)
-                save_image(image, 'test.jpeg')
+                # netout = preprocess_true_boxes(boxes)
+                # boxes = decode_netout(netout)
+                # image = draw_boxes(image, boxes)
+                # save_image(image, 'test.jpeg')
 
-                for box in boxes:
-                    print(str(box))
+                # break
 
-                break
+                self.summary_tr.add_summary(res['summary'], res['global_step'])
+                self.summary_tr.flush()
 
-                # self.summary_tr.add_summary(res['summary'], res['global_step'])
-                # self.summary_tr.flush()
+                if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
+                    images_va, bboxes_va, y_true_va = sess.run(self.batch_va)
 
-                # if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
-                #     images_va, labels_va, bboxes_va = sess.run(self.batch_va)
-                #     res = sess.run(
-                #         fetches={
-                #             'summary': self.summary_op,
-                #             'global_step': self.global_step,
-                #             'best_boxes': self.best_boxes
-                #         },
-                #         feed_dict={
-                #             self.images_in: images_va,
-                #             self.labels_in: labels_va,
-                #             self.bboxes_in: bboxes_va
-                #         })
+                    res = sess.run(
+                        fetches={
+                            'summary': self.summary_op,
+                            'global_step': self.global_step,
+                            'netout': self.model
+                        },
+                        feed_dict={
+                            self.images_in: images_va,
+                            self.bboxes_in: bboxes_va,
+                            self.y_true: y_true_va
+                        })
+
+                    image = images_va[0]
+
+                    # True
+                    boxes_true = decode_netout(y_true_va[0])
+                    image_true = draw_boxes(image, boxes_true)
+
+                    # Pred
+                    boxes_pred = decode_netout(res['netout'][0])
+                    image_pred = draw_boxes(image, boxes_pred)
+
+                    image_combined = combine_images([image_true, image_pred])
+                    image_combined.save(
+                        'eval_images/{}.jpeg'.format(idx_epoch))
 
                 #     if self.config.print_boxes:
                 #         print(res['best_boxes'])

@@ -227,6 +227,24 @@ def draw_boxes(image, boxes):
     return image
 
 
+def combine_images(images):
+    '''Draw 2 images side by side.'''
+    images = [Image.fromarray(i) for i in images]
+    widths = [i.size[0] for i in images]
+    heights = [i.size[1] for i in images]
+
+    total_width = sum(widths)
+    max_height = max(heights)
+
+    new_im = Image.new('RGB', (total_width, max_height))
+    x_offset = 0
+    for im in images:
+        new_im.paste(im, (x_offset, 0))
+        x_offset += im.size[0]
+
+    return new_im
+
+
 def save_image(image, filename):
     '''Save a numpy array (height, width, 3) between [0, 1] as an image to filename'''
     # formatted = (image * 255 / np.max(image)).astype('uint8')
@@ -251,8 +269,6 @@ def decode_netout(netout, obj_threshold=0.3):
 
                 if np.sum(classes) > 0:
                     x, y, w, h = netout[row, col, b, :4]
-
-                    print('x: {} y: {} w: {} h: {}'.format(x, y, w, h))
 
                     x = (sigmoid(x) + row) / GRID_W
                     y = (sigmoid(y) + col) / GRID_H

@@ -116,7 +116,7 @@ def preprocess_for_train(image,
 def preprocess_for_validation(image,
                               labels,
                               bboxes,
-                              size,
+                              y_true,
                               scope='preprocessing_val'):
     """Preprocesses the given image for validation."""
     with tf.name_scope(scope, [image, labels, bboxes]):
@@ -128,11 +128,17 @@ def preprocess_for_validation(image,
             image = tf.image.convert_image_dtype(image, dtype=tf.float32)
 
         # Resize image to output size.
-        out_shape = (size, size)
+        out_shape = (IMAGE_H, IMAGE_W)
         image = tf_image.resize_image(
             image,
             out_shape,
             method=tf.image.ResizeMethod.BILINEAR,
             align_corners=False)
 
-    return image, labels, bboxes
+    bboxes_labels = process_bboxes_and_labels(bboxes, labels)
+
+    # Reshape boxes and true output
+    num_anchors = len(YOLO_ANCHORS)
+    y_true = tf.reshape(y_true, (GRID_H, GRID_W, num_anchors, 4 + 1 + CLASSES))
+
+    return image, bboxes_labels, y_true
