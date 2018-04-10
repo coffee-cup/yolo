@@ -14,6 +14,10 @@ from utils.voc_common import (BOX, CLASSES, GRID_H, GRID_W, IMAGE_H, IMAGE_W,
 OBJ_THRESHOLD = 0.3
 NMS_THRESHOLD = 0.3
 
+CLASS_WEIGHTS = np.ones(CLASSES, dtype='float32')
+OBJ_THRESHOLD = 0.3  #0.5
+NMS_THRESHOLD = 0.3  #0.45
+
 NO_OBJECT_SCALE = 1.0
 OBJECT_SCALE = 5.0
 COORD_SCALE = 1.0
@@ -33,18 +37,17 @@ class Yolo(object):
         provider_va = slim.dataset_data_provider.DatasetDataProvider(
             dataset_val, num_readers=1, shuffle=False)
 
-        [image_tr, labels_tr, bboxes_tr, detectors_mask,
-         true_boxes] = provider_tr.get([
-             'image', 'object/label', 'object/bbox', 'object/detectors_mask',
-             'object/matching_true_boxes'
-         ])
+        [image_tr, labels_tr, bboxes_tr, y_true] = provider_tr.get(
+            ['image', 'object/label', 'object/bbox', 'object/y_true'])
 
         [image_va, labels_va,
          bboxes_va] = provider_va.get(['image', 'object/label', 'object/bbox'])
 
         # Preprocess
-        image, bboxes, detectors_mask, true_boxes = preprocess_for_train(
-            image_tr, labels_tr, bboxes_tr, detectors_mask, true_boxes)
+        image, bboxes, y_true = preprocess_for_train(image_tr, labels_tr,
+                                                     bboxes_tr, y_true)
+        # image, bboxes, detectors_mask, true_boxes = preprocess_for_train(
+        #     image_tr, labels_tr, bboxes_tr, detectors_mask, true_boxes)
 
         image_va, labels_va, bboxes_va = preprocess_for_validation(
             image_va, labels_va, bboxes_va, IMAGE_H)
@@ -52,13 +55,11 @@ class Yolo(object):
         print('image {}'.format(image_tr))
         print('labels {}'.format(labels_tr))
         print('bboxes {}'.format(bboxes_tr))
-        print('mask {}'.format(detectors_mask))
-        print('true boxes {}'.format(true_boxes))
 
         # Create batches
         batch_size = self.config.batch_size
         self.batch_tr = tf.train.batch(
-            [image, bboxes, detectors_mask, true_boxes],
+            [image, bboxes, y_true],
             batch_size=batch_size,
             num_threads=1,
             capacity=1 * batch_size,
@@ -78,7 +79,7 @@ class Yolo(object):
         self._build_preprocessing()
         self.model = self._build_model()
         self.loss = self._build_loss()
-        # self.optimizer = self._build_optim()
+        self.optimizer = self._build_optim()
         # self._build_eval()
         self._build_summary()
         self._build_writer()
@@ -90,10 +91,9 @@ class Yolo(object):
         self.bboxes_in = tf.placeholder(tf.float32, shape=(None, None, 5))
 
         num_anchors = len(YOLO_ANCHORS)
-        self.detectors_mask = tf.placeholder(
-            tf.float32, shape=(None, GRID_H, GRID_W, num_anchors, 1))
-        self.true_boxes = tf.placeholder(
-            tf.float32, shape=(None, GRID_H, GRID_W, num_anchors, 5))
+        self.y_true = tf.placeholder(
+            tf.float32,
+            shape=(None, GRID_H, GRID_W, num_anchors, 4 + 1 + CLASSES))
 
     def _build_preprocessing(self):
         '''Build preprocessing related graph.'''
@@ -175,18 +175,18 @@ class Yolo(object):
     def _build_loss(self):
         with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
             bboxes = self.bboxes_in
-            y_true = self.true_boxes
-            detectors_mask = self.detectors_mask
-            batch_size = tf.shape(self.bboxes_in)[0]
-
+            y_true = self.y_true
             y_pred = self.model
+
+            batch_size = tf.shape(self.bboxes_in)[0]
+            true_boxes = bboxes[..., 0:4]
+            true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
 
             print('model output shape {}'.format(self.model.shape))
             print('bboxes in shape {}'.format(self.bboxes_in.shape))
             print('y_true shape {}'.format(y_true.shape))
 
             mask_shape = tf.shape(y_true)[:4]
-            print('mask shape {}'.format(mask_shape))
 
             cell_x = tf.to_float(
                 tf.reshape(
@@ -200,6 +200,8 @@ class Yolo(object):
             coord_mask = tf.zeros(mask_shape)
             conf_mask = tf.zeros(mask_shape)
             class_mask = tf.zeros(mask_shape)
+
+            num_anchors = len(YOLO_ANCHORS)
 
             ###
             # Adjust Prediction
@@ -250,12 +252,75 @@ class Yolo(object):
 
             true_box_conf = iou_scores * y_true[..., 4]
 
-            # Doesn't work, need per class probabilities
-            #  1 in grid cell and class index where object is, 0 otherwise
             # adjust class probabilities
-            # true_box_class = tf.argmax(y_true[..., 5:], -1)
+            true_box_class = tf.argmax(y_true[..., 5:], -1)
 
-            return iou_scores
+            ###
+            # Determine the masks
+            ###
+
+            # position of the ground truth boxes
+            coord_mask = tf.expand_dims(y_true[..., 4], axis=-1) * COORD_SCALE
+
+            # penalize predictors + penalize boxes with low IOU
+            true_xy = true_boxes[..., 0:2]
+            true_wh = true_boxes[..., 2:4]
+
+            true_wh_half = true_wh / 2.
+            true_mins = true_xy - true_wh_half
+            true_maxes = true_xy + true_wh_half
+
+            pred_xy = tf.expand_dims(pred_box_xy, 4)
+            pred_wh = tf.expand_dims(pred_box_wh, 4)
+
+            pred_wh_half = pred_wh / 2.
+            pred_mins = pred_xy - pred_wh_half
+            pred_maxes = pred_xy + pred_wh_half
+
+            intersect_mins = tf.maximum(pred_mins, true_mins)
+            intersect_maxes = tf.minimum(pred_maxes, true_maxes)
+            intersect_wh = tf.maximum(intersect_maxes - intersect_mins, 0.)
+            intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
+
+            true_areas = true_wh[..., 0] * true_wh[..., 1]
+            pred_areas = pred_wh[..., 0] * pred_wh[..., 1]
+
+            union_areas = pred_areas + true_areas - intersect_areas
+            iou_scores = tf.truediv(intersect_areas, union_areas)
+
+            best_ious = tf.reduce_max(iou_scores, axis=4)
+            conf_mask = conf_mask + tf.to_float(best_ious < 0.6) * (
+                1 - y_true[..., 4]) * OBJECT_SCALE
+
+            # penalize the confidence of the boxes, which are reponsible for corresponding ground truth box
+            conf_mask = conf_mask + y_true[..., 4] * OBJECT_SCALE
+
+            ### class mask: simply the position of the ground truth boxes (the predictors)
+            class_mask = y_true[..., 4] * tf.gather(
+                CLASS_WEIGHTS, true_box_class) * CLASS_SCALE
+
+            # Finalize the loss
+            nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
+            nb_conf_box = tf.reduce_sum(tf.to_float(conf_mask > 0.0))
+            nb_class_box = tf.reduce_sum(tf.to_float(class_mask > 0.0))
+
+            loss_xy = tf.reduce_sum(
+                tf.square(true_box_xy - pred_box_xy) * coord_mask) / (
+                    nb_coord_box + 1e-6) / 2.
+            loss_wh = tf.reduce_sum(
+                tf.square(true_box_wh - pred_box_wh) * coord_mask) / (
+                    nb_coord_box + 1e-6) / 2.
+            loss_conf = tf.reduce_sum(
+                tf.square(true_box_conf - pred_box_conf) * conf_mask) / (
+                    nb_conf_box + 1e-6) / 2.
+            loss_class = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                labels=true_box_class, logits=pred_box_class)
+            loss_class = tf.reduce_sum(loss_class * class_mask) / (
+                nb_class_box + 1e-6)
+
+            loss = loss_xy + loss_wh + loss_conf + loss_class
+
+            return loss
 
     def _build_loss_2(self):
         '''Build our loss.'''
@@ -394,30 +459,30 @@ class Yolo(object):
                 print('\n\n')
 
                 # Get training batch
-                images_tr, bboxes_tr, detectors_mask, true_boxes = sess.run(
-                    self.batch_tr)
+                images_tr, bboxes_tr, y_true = sess.run(self.batch_tr)
 
                 print('\n--- Boxes, shape {}'.format(bboxes_tr.shape))
                 print(bboxes_tr)
 
-                print('\n--- Mask, shape {}'.format(detectors_mask.shape))
-
-                print('\n--- True Boxes, shape {}'.format(true_boxes.shape))
+                print('\n--- y_true, shape {}'.format(y_true.shape))
 
                 res = sess.run(
-                    self.loss,
+                    fetches={
+                        'loss': self.loss,
+                        'optimizer': self.optimizer,
+                        'global_step': self.global_step,
+                    },
                     feed_dict={
                         self.images_in: images_tr,
                         self.bboxes_in: bboxes_tr,
-                        self.detectors_mask: detectors_mask,
-                        self.true_boxes: true_boxes
+                        self.y_true: y_true
                     })
 
-                print('\n\n--- Output')
-                print(res)
+                print('\n\n--- Loss')
+                print(res['loss'])
 
-                # print('\n\n--- Output Shape')
-                # print(res.shape)
+                print('\n\n--- Loss Shape')
+                print(res['loss'].shape)
 
                 # print(res)
                 # print(res[:, 0])
@@ -437,28 +502,26 @@ class Yolo(object):
                 # self.summary_tr.add_summary(res['summary'], res['global_step'])
                 # self.summary_tr.flush()
 
-                break
+                # if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
+                #     images_va, labels_va, bboxes_va = sess.run(self.batch_va)
+                #     res = sess.run(
+                #         fetches={
+                #             'summary': self.summary_op,
+                #             'global_step': self.global_step,
+                #             'best_boxes': self.best_boxes
+                #         },
+                #         feed_dict={
+                #             self.images_in: images_va,
+                #             self.labels_in: labels_va,
+                #             self.bboxes_in: bboxes_va
+                #         })
 
-                if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
-                    images_va, labels_va, bboxes_va = sess.run(self.batch_va)
-                    res = sess.run(
-                        fetches={
-                            'summary': self.summary_op,
-                            'global_step': self.global_step,
-                            'best_boxes': self.best_boxes
-                        },
-                        feed_dict={
-                            self.images_in: images_va,
-                            self.labels_in: labels_va,
-                            self.bboxes_in: bboxes_va
-                        })
+                #     if self.config.print_boxes:
+                #         print(res['best_boxes'])
 
-                    if self.config.print_boxes:
-                        print(res['best_boxes'])
-
-                    self.summary_va.add_summary(res['summary'],
-                                                res['global_step'])
-                    self.summary_va.flush()
+                #     self.summary_va.add_summary(res['summary'],
+                #                                 res['global_step'])
+                #     self.summary_va.flush()
 
             coord.request_stop()
             coord.join(threads)

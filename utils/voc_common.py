@@ -41,38 +41,42 @@ VOC_LABELS = {
 
 
 def preprocess_true_boxes(true_boxes):
+    '''true_boxes is list of bounding boxes in form [x, y, w, h]'''
     anchors = YOLO_ANCHORS
     height, width = IMAGE_H, IMAGE_W
     num_anchors = len(anchors)
+    num_boxes = len(true_boxes)
 
-    assert height % 32 == 0, 'Image sizes in YOLO_v2 must be multiples of 32.'
-    assert width % 32 == 0, 'Image sizes in YOLO_v2 must be multiples of 32.'
+    y_true = np.zeros(
+        (GRID_H, GRID_W, num_anchors, 4 + 1 + CLASSES), dtype=np.float32)
 
-    conv_height = height // 32
-    conv_width = width // 32
+    # num_box_params = true_boxes.shape[1]
+    # detectors_mask = np.zeros(
+    #     (conv_height, conv_width, num_anchors, 1), dtype=np.float32)
+    # matching_true_boxes = np.zeros(
+    #     (conv_height, conv_width, num_anchors, num_box_params),
+    #     dtype=np.float32)
 
-    num_box_params = true_boxes.shape[1]
-    detectors_mask = np.zeros(
-        (conv_height, conv_width, num_anchors, 1), dtype=np.float32)
-    matching_true_boxes = np.zeros(
-        (conv_height, conv_width, num_anchors, num_box_params),
-        dtype=np.float32)
+    for box_index, box in enumerate(true_boxes):
+        box_class = int(box[4:5])
 
-    for box in true_boxes:
-        # scale box to convolutional feature spatial dimensions
-        box_class = box[4:5]
+        # Scale box by grid
+        box[0] /= GRID_W  # center x
+        box[1] /= GRID_H  # center y
+        box[2] /= GRID_W  # width
+        box[3] /= GRID_H  # height
+        box = box[0:4]
 
-        box = box[0:4] * np.array(
-            [conv_width, conv_height, conv_width, conv_height])
+        grid_x = np.floor(box[1]).astype('int')
+        grid_y = np.floor(box[0]).astype('int')
 
-        i = np.floor(box[1]).astype('int')
-        j = np.floor(box[0]).astype('int')
+        best_iou = -1
+        best_anchor = -1
+        shifted_box = np.array([0, 0, box[2], box[3]])
 
-        best_iou = 0
-        best_anchor = 0
         for k, anchor in enumerate(anchors):
             # Find IOU between box shifted to origin and anchor box
-            box_maxes = box[2:4] / 2.
+            box_maxes = shifted_box[2:4] / 2.
             box_mins = -box_maxes
             anchor_maxes = (anchor / 2.)
             anchor_mins = -anchor_maxes
@@ -81,7 +85,7 @@ def preprocess_true_boxes(true_boxes):
             intersect_maxes = np.minimum(box_maxes, anchor_maxes)
             intersect_wh = np.maximum(intersect_maxes - intersect_mins, 0.)
             intersect_area = intersect_wh[0] * intersect_wh[1]
-            box_area = box[2] * box[3]
+            box_area = shifted_box[2] * shifted_box[3]
             anchor_area = anchor[0] * anchor[1]
             iou = intersect_area / (box_area + anchor_area - intersect_area)
             if iou > best_iou:
@@ -89,7 +93,11 @@ def preprocess_true_boxes(true_boxes):
                 best_anchor = k
 
         if best_iou > 0:
-            detectors_mask[i, j, best_anchor] = 1
+            y_true[grid_y, grid_x, best_anchor, 0:4] = box
+            y_true[grid_y, grid_x, best_anchor, 4] = 1
+            y_true[grid_y, grid_x, best_anchor, 5 + box_class - 1] = 1
+
+            # detectors_mask[i, j, best_anchor] = 1
             # adjusted_box = np.array(
             #     [
             #         box[0] - j, box[1] - i,
@@ -97,15 +105,16 @@ def preprocess_true_boxes(true_boxes):
             #         np.log(box[3] / anchors[best_anchor][1]), box_class
             #     ],
             #     dtype=np.float32)
-            x = box[0] - j
-            y = box[1] - i
-            w = box[2] / anchors[best_anchor][0]
-            h = box[3] / anchors[best_anchor][1]
-            adjusted_box = np.array([x, y, w, h, box_class])
+            # x = box[0] - grid_x
+            # y = box[1] - grid_y
+            # w = box[2] / anchors[best_anchor][0]
+            # h = box[3] / anchors[best_anchor][1]
+            # adjusted_box = np.array([x, y, w, h, box_class])
 
-            matching_true_boxes[i, j, best_anchor] = adjusted_box
+            # matching_true_boxes[i, j, best_anchor] = adjusted_box
 
-    return detectors_mask, matching_true_boxes
+    return y_true
+    # return detectors_mask, matching_true_boxes
 
 
 def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
@@ -152,8 +161,7 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         'image/object/bbox/xmax': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/ymax': tf.VarLenFeature(dtype=tf.float32),
         'image/object/count': tf.FixedLenFeature([], tf.int64),
-        'image/object/detectors_mask': tf.VarLenFeature(dtype=tf.float32),
-        'image/object/matching_true_boxes': tf.VarLenFeature(dtype=tf.float32)
+        'image/object/y_true': tf.VarLenFeature(dtype=tf.float32)
     }
 
     items_to_handlers = {
@@ -168,10 +176,8 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         slim.tfexample_decoder.Tensor('image/object/class/label'),
         'object/count':
         slim.tfexample_decoder.Tensor('image/object/count'),
-        'object/detectors_mask':
-        slim.tfexample_decoder.Tensor('image/object/detectors_mask'),
-        'object/matching_true_boxes':
-        slim.tfexample_decoder.Tensor('image/object/matching_true_boxes')
+        'object/y_true':
+        slim.tfexample_decoder.Tensor('image/object/y_true')
     }
 
     decoder = slim.tfexample_decoder.TFExampleDecoder(keys_to_features,

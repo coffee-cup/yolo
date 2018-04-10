@@ -141,10 +141,15 @@ def _dict_to_tf_example(data,
         boxes.append(box)
 
     boxes = np.array(boxes)
-    detectors_mask, matching_true_boxes = preprocess_true_boxes(boxes)
+    b_true, y_true = preprocess_true_boxes(boxes)
 
-    detectors_mask_1d = detectors_mask.reshape((-1))
-    matching_boxes_1d = matching_true_boxes.reshape((-1))
+    b_true = b_true.reshape((-1))
+    y_true = y_true.reshape((-1))
+
+    # detectors_mask, matching_true_boxes = preprocess_true_boxes(boxes)
+
+    # detectors_mask_1d = detectors_mask.reshape((-1))
+    # matching_boxes_1d = matching_true_boxes.reshape((-1))
 
     features = {
         # Image file
@@ -174,9 +179,8 @@ def _dict_to_tf_example(data,
         'image/object/bbox/ymin': float_list_feature(ymin),
         'image/object/bbox/ymax': float_list_feature(ymax),
         'image/object/count': int64_feature(object_count),
-        'image/object/detectors_mask': float_list_feature(detectors_mask_1d),
-        'image/object/matching_true_boxes':
-        float_list_feature(matching_boxes_1d)
+        'image/object/b_true': float_list_feature(b_true),
+        'image/object/y_true': float_list_feature(y_true)
     }
 
     example = tf.train.Example(features=tf.train.Features(feature=features))
