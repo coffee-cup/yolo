@@ -1,7 +1,9 @@
 import os
 
 import numpy as np
+from PIL import Image
 
+import cv2
 import tensorflow as tf
 import utils.dataset_util
 
@@ -38,6 +40,10 @@ VOC_LABELS = {
     'train': (19, 'Vehicle'),
     'tvmonitor': (20, 'Indoor'),
 }
+
+labels_to_names = {}
+for k, v in VOC_LABELS.items():
+    labels_to_names[v[0]] = k
 
 
 def preprocess_true_boxes(true_boxes):
@@ -86,6 +92,11 @@ def preprocess_true_boxes(true_boxes):
                 best_anchor = k
 
         if best_iou > 0:
+            box = np.array([
+                box[0] - grid_y, box[1] - grid_x,
+                np.log(box[2] / anchors[best_anchor][0]),
+                np.log(box[3] / anchors[best_anchor][1])
+            ])
             y_true[grid_y, grid_x, best_anchor, 0:4] = box
             y_true[grid_y, grid_x, best_anchor, 4] = 1
             y_true[grid_y, grid_x, best_anchor, 5 + box_class - 1] = 1
@@ -159,10 +170,6 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
     decoder = slim.tfexample_decoder.TFExampleDecoder(keys_to_features,
                                                       items_to_handlers)
 
-    labels_to_names = {}
-    for k, v in VOC_LABELS.items():
-        labels_to_names[v[0]] = k
-
     return slim.dataset.Dataset(
         data_sources=record_path,
         reader=reader,
@@ -171,3 +178,107 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         items_to_descriptions=items_to_descriptions,
         num_classes=num_classes,
         labels_to_names=labels_to_names)
+
+
+class BoundBox:
+    def __init__(self, xmin, ymin, xmax, ymax, confidence=None, classes=None):
+        self.xmin = xmin
+        self.ymin = ymin
+        self.xmax = xmax
+        self.ymax = ymax
+
+        self.confidence = confidence
+        self.classes = classes
+
+        self.label = 0
+        if classes is not None:
+            self.label = np.argmax(self.classes) + 1
+            self.score = self.classes[self.label - 1]
+
+    def obj_name(self):
+        return labels_to_names[self.label]
+
+    def coord_array(self):
+        return np.array([self.xmin, self.ymin, self.xmax, self.ymax])
+
+    def __str__(self):
+        return str(self.coord_array()) + ' ' + self.obj_name()
+
+
+def draw_boxes(image, boxes):
+    image = (image * 255 / np.max(image)).astype('uint8')
+    image_h, image_w, _ = image.shape
+
+    for box in boxes:
+        xmin = int(box.xmin * image_w)
+        ymin = int(box.ymin * image_h)
+        xmax = int(box.xmax * image_w)
+        ymax = int(box.ymax * image_h)
+
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 255, 0), 2)
+        cv2.putText(
+            image,
+            box.obj_name() + ' ' + str(box.score), (xmin, ymin - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1e-3 * image_h, (0, 255, 0),
+            2,
+            lineType=cv2.LINE_AA)
+
+    return image
+
+
+def save_image(image, filename):
+    '''Save a numpy array (height, width, 3) between [0, 1] as an image to filename'''
+    # formatted = (image * 255 / np.max(image)).astype('uint8')
+    im = Image.fromarray(image)
+    im.save(filename)
+
+
+def decode_netout(netout, obj_threshold=0.3):
+    boxes = []
+
+    num_anchors = len(YOLO_ANCHORS)
+
+    # netout[..., 4] = sigmoid(netout[..., 4])
+    # netout[..., 5:] = netout[..., 4][..., np.newaxis] * softmax(
+    #     netout[..., 5:])
+    # netout[..., 5:] *= netout[..., 5:] > obj_threshold
+
+    for row in range(GRID_H):
+        for col in range(GRID_W):
+            for b in range(num_anchors):
+                classes = netout[row, col, b, 5:]
+
+                if np.sum(classes) > 0:
+                    x, y, w, h = netout[row, col, b, :4]
+
+                    print('x: {} y: {} w: {} h: {}'.format(x, y, w, h))
+
+                    x = (sigmoid(x) + row) / GRID_W
+                    y = (sigmoid(y) + col) / GRID_H
+                    w = YOLO_ANCHORS[b][0] * np.exp(w) / GRID_W
+                    h = YOLO_ANCHORS[b][1] * np.exp(h) / GRID_H
+                    confidence = netout[row, col, b, 4]
+
+                    # Only include box if class label is not 0 (background)
+                    box = BoundBox(x - w / 2, y - h / 2, x + w / 2, y + h / 2,
+                                   confidence, classes)
+                    boxes.append(box)
+
+    boxes = [box for box in boxes if box.score > obj_threshold]
+    return boxes
+
+
+def sigmoid(x):
+    return 1. / (1. + np.exp(-x))
+
+
+def softmax(x, axis=-1, t=-100.):
+    x = x - np.max(x)
+
+    if np.min(x) < t:
+        x = x / np.min(x) * t
+
+    e_x = np.exp(x)
+
+    return e_x / e_x.sum(axis, keepdims=True)

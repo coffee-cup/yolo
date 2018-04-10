@@ -9,7 +9,8 @@ from utils import *
 from utils.preprocess import (preprocess_for_train, preprocess_for_validation,
                               process_bboxes_and_labels)
 from utils.voc_common import (BOX, CLASSES, GRID_H, GRID_W, IMAGE_H, IMAGE_W,
-                              YOLO_ANCHORS)
+                              YOLO_ANCHORS, decode_netout, draw_boxes,
+                              preprocess_true_boxes, save_image)
 
 OBJ_THRESHOLD = 0.3
 NMS_THRESHOLD = 0.3
@@ -413,18 +414,18 @@ class Yolo(object):
 
                 # print('\n--- y_true, shape {}'.format(y_true.shape))
 
-                res = sess.run(
-                    fetches={
-                        'loss': self.loss,
-                        'optimizer': self.optimizer,
-                        'global_step': self.global_step,
-                        'summary': self.summary_op
-                    },
-                    feed_dict={
-                        self.images_in: images_tr,
-                        self.bboxes_in: bboxes_tr,
-                        self.y_true: y_true
-                    })
+                # res = sess.run(
+                #     fetches={
+                #         'loss': self.loss,
+                #         'optimizer': self.optimizer,
+                #         'global_step': self.global_step,
+                #         'summary': self.summary_op
+                #     },
+                #     feed_dict={
+                #         self.images_in: images_tr,
+                #         self.bboxes_in: bboxes_tr,
+                #         self.y_true: y_true
+                #     })
 
                 # print('\n\n--- Loss')
                 # print(res['loss'])
@@ -435,8 +436,23 @@ class Yolo(object):
                 # print(res)
                 # print(res[:, 0])
 
-                self.summary_tr.add_summary(res['summary'], res['global_step'])
-                self.summary_tr.flush()
+                image = images_tr[0]
+                boxes = bboxes_tr[0]
+
+                print(boxes)
+
+                netout = preprocess_true_boxes(boxes)
+                boxes = decode_netout(netout)
+                image = draw_boxes(image, boxes)
+                save_image(image, 'test.jpeg')
+
+                for box in boxes:
+                    print(str(box))
+
+                break
+
+                # self.summary_tr.add_summary(res['summary'], res['global_step'])
+                # self.summary_tr.flush()
 
                 # if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
                 #     images_va, labels_va, bboxes_va = sess.run(self.batch_va)
