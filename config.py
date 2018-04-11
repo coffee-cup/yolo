@@ -59,7 +59,7 @@ train_arg.add_argument(
 train_arg.add_argument(
     "--learning_rate",
     type=float,
-    default=1e-4,
+    default=1e-5,
     help="Learning rate (gradient step size)")
 
 train_arg.add_argument(

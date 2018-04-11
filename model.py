@@ -24,6 +24,8 @@ OBJECT_SCALE = 5.0
 COORD_SCALE = 1.0
 CLASS_SCALE = 1.0
 
+WARM_UP_BATCHES = 20
+
 
 class Yolo(object):
     '''Yolo network'''
@@ -117,7 +119,7 @@ class Yolo(object):
                         0.0, 0.01),
                     kernel_regularizer=slim.l2_regularizer(0.0005),
                     bias_initializer=tf.zeros_initializer())
-                # x = tf.layers.batch_normalization(x, training=self.training)
+                x = tf.layers.batch_normalization(x, training=self.training)
                 x = tf.nn.leaky_relu(x, alpha=0.2)
 
             return x
@@ -189,6 +191,7 @@ class Yolo(object):
 
             mask_shape = tf.shape(y_true)[:4]
             total_recall = tf.Variable(0.)
+            seen = tf.Variable(0.)
 
             cell_x = tf.to_float(
                 tf.reshape(
@@ -300,6 +303,20 @@ class Yolo(object):
             ### class mask: simply the position of the ground truth boxes (the predictors)
             class_mask = y_true[..., 4] * tf.gather(
                 CLASS_WEIGHTS, true_box_class) * CLASS_SCALE
+
+            ###
+            # Warm up training
+            ###
+            no_boxes_mask = tf.to_float(coord_mask < COORD_SCALE / 2.)
+            seen = tf.assign_add(seen, 1.)
+
+            true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(seen, WARM_UP_BATCHES),
+                          lambda: [true_box_xy + (0.5 + cell_grid) * no_boxes_mask,
+                                   true_box_wh + tf.ones_like(true_box_wh) * np.reshape(YOLO_ANCHORS, [1,1,1,BOX,2]) * no_boxes_mask,
+                                   tf.ones_like(coord_mask)],
+                          lambda: [true_box_xy,
+                                   true_box_wh,
+                                   coord_mask])
 
             # Finalize the loss
             nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
