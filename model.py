@@ -108,7 +108,7 @@ class Yolo(object):
             net, classes, num_anchors, training=False, center=True'''
 
         def conv_layer(x, filters, kernel_size, name):
-            with tf.variable_scope(name):
+            with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
                 x = tf.layers.conv2d(
                     x,
                     filters,
@@ -190,8 +190,6 @@ class Yolo(object):
             true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
 
             mask_shape = tf.shape(y_true)[:4]
-            total_recall = tf.Variable(0.)
-            seen = tf.Variable(0.)
 
             cell_x = tf.to_float(
                 tf.reshape(
@@ -307,16 +305,15 @@ class Yolo(object):
             ###
             # Warm up training
             ###
-            no_boxes_mask = tf.to_float(coord_mask < COORD_SCALE / 2.)
-            seen = tf.assign_add(seen, 1.)
+            # no_boxes_mask = tf.to_float(coord_mask < COORD_SCALE / 2.)
 
-            true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(seen, WARM_UP_BATCHES),
-                          lambda: [true_box_xy + (0.5 + cell_grid) * no_boxes_mask,
-                                   true_box_wh + tf.ones_like(true_box_wh) * np.reshape(YOLO_ANCHORS, [1,1,1,BOX,2]) * no_boxes_mask,
-                                   tf.ones_like(coord_mask)],
-                          lambda: [true_box_xy,
-                                   true_box_wh,
-                                   coord_mask])
+            # true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(self.global_step, WARM_UP_BATCHES),
+            #               lambda: [true_box_xy + (0.5 + cell_grid) * no_boxes_mask,
+            #                        true_box_wh + tf.ones_like(true_box_wh) * np.reshape(YOLO_ANCHORS, [1,1,1,BOX,2]) * no_boxes_mask,
+            #                        tf.ones_like(coord_mask)],
+            #               lambda: [true_box_xy,
+            #                        true_box_wh,
+            #                        coord_mask])
 
             # Finalize the loss
             nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
@@ -344,9 +341,6 @@ class Yolo(object):
                 tf.to_float(true_box_conf > 0.5) *
                 tf.to_float(pred_box_conf > 0.3))
 
-            current_recall = nb_pred_box / (nb_true_box + 1e-6)
-            total_recall = tf.assign_add(total_recall, current_recall)
-
             if self.debug:
                 loss = tf.Print(
                     loss, [loss_xy], message='Loss XY \t', summarize=1000)
@@ -362,7 +356,6 @@ class Yolo(object):
                     loss, [loss], message='Total Loss \t', summarize=1000)
 
             tf.summary.scalar('loss', loss)
-            tf.summary.scalar('recall', total_recall)
             return loss
 
     def _build_optim(self):
@@ -371,8 +364,9 @@ class Yolo(object):
             self.global_step = tf.get_variable(
                 'global_step',
                 shape=(),
-                dtype=tf.int32,
-                initializer=tf.zeros_initializer)
+                dtype=tf.int64,
+                initializer=tf.zeros_initializer(),
+                trainable=False)
             adam = tf.train.AdamOptimizer(
                 learning_rate=self.config.learning_rate)
             return adam.minimize(self.loss, global_step=self.global_step)
@@ -414,23 +408,25 @@ class Yolo(object):
         with tf.Session(config=conf) as sess:
             print('Initializing...')
             coord = tf.train.Coordinator()
-            sess.run([
-                tf.local_variables_initializer(),
-                tf.global_variables_initializer()
-            ])
-            threads = tf.train.start_queue_runners(sess, coord=coord)
 
             # Add the session graph to training summary
             # so we can view in Tensorboard
             self.summary_tr.add_graph(sess.graph)
 
+            sess.run(tf.global_variables_initializer())
+            # sess.run([
+            #     tf.local_variables_initializer(),
+            #     tf.global_variables_initializer()
+            # ])
+            threads = tf.train.start_queue_runners(sess, coord=coord)
+
             latest_checkpoint = tf.train.latest_checkpoint(self.config.log_dir)
             b_resume = latest_checkpoint is not None and self.config.allow_restore
             if b_resume:
                 print('Restoring from {}...'.format(self.config.log_dir))
+
                 self.saver_cur.restore(sess, latest_checkpoint)
                 res = sess.run(fetches={'global_step': self.global_step})
-
                 step = res['global_step']
             else:
                 step = 0
@@ -444,8 +440,8 @@ class Yolo(object):
 
                 # print('\n--- y_true, shape {}'.format(y_true.shape))
 
-                b_write_summary = (
-                    step is 0) or (step + 1) % self.config.report_freq is 0
+                b_write_summary = (step == 0) or (
+                    step + 1) % self.config.report_freq == 0
                 if b_write_summary:
                     fetches = {
                         'loss': self.loss,
@@ -474,7 +470,8 @@ class Yolo(object):
                         sess,
                         self.save_file_cur,
                         global_step=self.global_step,
-                        write_meta_graph=False)
+                        write_meta_graph=True,
+                        write_state=True)
 
                 # print('\n\n--- Loss')
                 # print(res['loss'])
@@ -525,13 +522,15 @@ class Yolo(object):
                     image_combined.save(
                         'eval_images/{}.jpeg'.format(idx_epoch))
 
-                #     if self.config.print_boxes:
-                #         print(res['best_boxes'])
+                    #     if self.config.print_boxes:
+                    #         print(res['best_boxes'])
 
-                #     self.summary_va.add_summary(res['summary'],
-                #                                 res['global_step'])
-                #     self.summary_va.flush()
+                    self.summary_va.add_summary(res['summary'],
+                                                res['global_step'])
+                    self.summary_va.flush()
 
             coord.request_stop()
             coord.join(threads)
             sess.close()
+
+            print('done')

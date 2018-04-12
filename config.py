@@ -98,6 +98,12 @@ train_arg.add_argument(
     default=False,
     help='Whether or not to allow restoring model from checkpoint')
 
+train_arg.add_argument(
+    '--debug',
+    type=str2bool,
+    default=False,
+    help='Whether or not to print train stats as it runs.')
+
 # ----------------------------------------
 # Arguments for model
 model_arg = add_argument_group("Model")

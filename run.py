@@ -18,7 +18,7 @@ def main(config):
     dataset_val = load_data(config.data_dir, config.record_file, config.year,
                             'val')
 
-    yolo = Yolo(config, dataset_train, dataset_val)
+    yolo = Yolo(config, dataset_train, dataset_val, debug=config.debug)
 
     try:
         yolo.train()
