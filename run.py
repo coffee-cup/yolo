@@ -11,15 +11,18 @@ def main(config):
 
     # ----------------------------------------
     # Load pascal voc datasets
-
     print("\n--- Reading PASCAL {} data".format(config.year))
     dataset_train = load_data(config.data_dir, config.record_file, config.year,
                               'train')
     dataset_val = load_data(config.data_dir, config.record_file, config.year,
                             'val')
 
+    # ----------------------------------------
+    # Create the model
     yolo = Yolo(config, dataset_train, dataset_val, debug=config.debug)
 
+    # ----------------------------------------
+    # Start training
     try:
         yolo.train()
     except tf.errors.OutOfRangeError:

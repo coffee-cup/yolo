@@ -9,14 +9,24 @@ import utils.dataset_util
 
 slim = tf.contrib.slim
 
+# Size image is resized to
 IMAGE_H, IMAGE_W = 416, 416
+
+# Size of grid
 GRID_H, GRID_W = 13, 13
+
+# Number of anchor boxes
 BOX = 5
+
+# Number of classes
 CLASSES = 20
+
+# Anchor boxes
 YOLO_ANCHORS = np.array(((0.57273, 0.677385), (1.87446, 2.06253),
                          (3.33843, 5.47434), (7.88282, 3.52778), (9.77052,
                                                                   9.16828)))
 
+# VOC labels used
 VOC_LABELS = {
     'none': (0, 'Background'),
     'aeroplane': (1, 'Vehicle'),
@@ -45,6 +55,7 @@ labels_to_names = {}
 for k, v in VOC_LABELS.items():
     labels_to_names[v[0]] = k
 
+# Colours used to draw bounding boxes
 colours = [
     '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
     '#03a9f4', '#00bcd4', '#009688', '#4caf50', '#8bc34a', '#cddc39',
@@ -54,6 +65,7 @@ colours = [
 
 
 def to_rgb(h):
+    '''Convert a hex colour to an rgb one.'''
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
@@ -84,6 +96,7 @@ def preprocess_true_boxes(true_boxes):
         best_anchor = -1
         shifted_box = np.array([0, 0, box[2], box[3]])
 
+        # Find the anchor box with the lowest IOU to the bounding box
         for k, anchor in enumerate(anchors):
             # Find IOU between box shifted to origin and anchor box
             box_maxes = shifted_box[2:4] / 2.
@@ -102,6 +115,7 @@ def preprocess_true_boxes(true_boxes):
                 best_iou = iou
                 best_anchor = k
 
+        # Place the box in the best anchor location
         if best_iou > 0:
             box = np.array([
                 box[0] - grid_y, box[1] - grid_x,
@@ -117,7 +131,7 @@ def preprocess_true_boxes(true_boxes):
 
 def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
               num_classes):
-    """Gets a dataset tuple with instructions for reading Pascal VOC dataset.
+    '''Gets a dataset tuple with instructions for reading Pascal VOC dataset.
 
     Args:
       split_name: A train/test split name.
@@ -125,7 +139,7 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
 
     Returns:
       A `Dataset` namedtuple.
-    """
+    '''
 
     reader = tf.TFRecordReader
 
@@ -162,6 +176,7 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
         'image/object/y_true': tf.VarLenFeature(dtype=tf.float32)
     }
 
+    # Create useful ways to get fields out of the TFRecord
     items_to_handlers = {
         'image':
         slim.tfexample_decoder.Image('image/encoded', 'image/format'),
@@ -193,6 +208,8 @@ def get_split(split_name, record_path, split_to_sizes, items_to_descriptions,
 
 
 class BoundBox:
+    '''Convince class used to store information about a bounding box.'''
+
     def __init__(self, xmin, ymin, xmax, ymax, confidence=None, classes=None):
         self.xmin = xmin
         self.ymin = ymin
@@ -222,6 +239,11 @@ class BoundBox:
 
 
 def draw_boxes(image, boxes):
+    '''Draw bounding boxes one the image
+
+    image: [height, width, 3]
+    boxes: [[xmin, ymin, xmax, ymax]]
+    '''
     image = (image * 255 / np.max(image)).astype('uint8')
     image_h, image_w, _ = image.shape
 
@@ -271,15 +293,14 @@ def save_image(image, filename):
 
 
 def decode_netout(netout, obj_threshold=0.3):
+    '''Decode the output of the network and return the predicted bounding boxes.
+
+    netout: [grid_x, grid_y, 5 (anchors), 4 + 1 + 20]
+    obj_threshold: prediction confidence threshold
+    '''
     boxes = []
 
     num_anchors = len(YOLO_ANCHORS)
-
-    # netout[..., 4] = sigmoid(netout[..., 4])
-    # netout[..., 5:] = netout[..., 4][..., np.newaxis] * softmax(
-    #     netout[..., 5:])
-    # netout[..., 5:] *= netout[..., 5:] > obj_threshold
-
     for row in range(GRID_H):
         for col in range(GRID_W):
             for b in range(num_anchors):
@@ -294,7 +315,6 @@ def decode_netout(netout, obj_threshold=0.3):
                     h = YOLO_ANCHORS[b][1] * np.exp(h) / GRID_H
                     confidence = netout[row, col, b, 4]
 
-                    # Only include box if class label is not 0 (background)
                     box = BoundBox(x - w / 2, y - h / 2, x + w / 2, y + h / 2,
                                    confidence, classes)
                     boxes.append(box)

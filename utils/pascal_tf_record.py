@@ -12,14 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-r"""Convert raw PASCAL dataset to TFRecord for object_detection.
 
-Example usage:
-    python object_detection/dataset_tools/create_pascal_tf_record.py \
-        --data_dir=/home/user/VOCdevkit \
-        --year=VOC2012 \
-        --output_path=/home/user/pascal.record
-"""
+# We have modified this file from the original
+# We use it to convert the VOC dataset to TFRecords
+
 from __future__ import absolute_import, division, print_function
 
 import hashlib
@@ -141,6 +137,8 @@ def _dict_to_tf_example(data,
         boxes.append(box)
 
     boxes = np.array(boxes)
+
+    # Process the bounding boxes into a format that YOLO expects
     y_true = preprocess_true_boxes(boxes)
 
     # TFRecords can only store flat arrays

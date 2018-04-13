@@ -11,6 +11,7 @@ ITEMS_TO_DESCRIPTIONS = {
     'object/label': 'A list of labels, one per each object.',
 }
 
+# The size of the datasets
 SPLITS_TO_SIZES = {
     'train': 5717,
     'val': 5823,
@@ -52,7 +53,7 @@ def load_data(data_dir, record_file, year, split_name):
 
     record_file = record_file.format(split_name)
 
-    # If record file does not exists, create it
+    # If TFRecord file does not exists, create it
     if not tf_record_exist(record_file):
         pascal_tf_record.create_record_file(data_dir, record_file, year,
                                             split_name)

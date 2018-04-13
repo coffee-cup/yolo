@@ -12,19 +12,13 @@ from utils.voc_common import (BOX, CLASSES, GRID_H, GRID_W, IMAGE_H, IMAGE_W,
                               YOLO_ANCHORS, combine_images, decode_netout,
                               draw_boxes, preprocess_true_boxes, save_image)
 
-OBJ_THRESHOLD = 0.3
-NMS_THRESHOLD = 0.3
-
 CLASS_WEIGHTS = np.ones(CLASSES, dtype='float32')
-OBJ_THRESHOLD = 0.3  #0.5
-NMS_THRESHOLD = 0.3  #0.45
 
+# Lambda scales
 NO_OBJECT_SCALE = 1.0
 OBJECT_SCALE = 5.0
 COORD_SCALE = 1.0
 CLASS_SCALE = 1.0
-
-WARM_UP_BATCHES = 20
 
 
 class Yolo(object):
@@ -34,13 +28,14 @@ class Yolo(object):
         self.config = config
         self.debug = debug
 
-        # Load dataset provider
+        # Load dataset providers
         provider_tr = slim.dataset_data_provider.DatasetDataProvider(
             dataset_train, num_readers=1, shuffle=True)
 
         provider_va = slim.dataset_data_provider.DatasetDataProvider(
             dataset_val, num_readers=1, shuffle=True)
 
+        # Grab the values we want from the TFRecord
         [image_tr, labels_tr, bboxes_tr, y_true_tr] = provider_tr.get(
             ['image', 'object/label', 'object/bbox', 'object/y_true'])
 
@@ -78,7 +73,6 @@ class Yolo(object):
             allow_smaller_final_batch=True)
 
         self._build_placeholder()
-        self._build_preprocessing()
         self.model = self._build_model()
         self.loss = self._build_loss()
         self.optimizer = self._build_optim()
@@ -99,15 +93,12 @@ class Yolo(object):
 
         self.training = tf.placeholder(tf.bool, shape=())
 
-    def _build_preprocessing(self):
-        '''Build preprocessing related graph.'''
-        pass
-
     def _build_model(self):
         ''' Arguments required for darknet :
             net, classes, num_anchors, training=False, center=True'''
 
         def conv_layer(x, filters, kernel_size, name):
+            '''Helper used to create convolutional layers.'''
             with tf.variable_scope(name, reuse=tf.AUTO_REUSE):
                 x = tf.layers.conv2d(
                     x,
@@ -125,18 +116,24 @@ class Yolo(object):
             return x
 
         def pool_layer(x, size, stride, name):
+            '''Helper used to create max pooling layers.'''
             with tf.name_scope(name):
                 x = tf.layers.max_pooling2d(x, size, stride, padding='same')
 
             return x
 
         def passthrough_layer(a, b, filters, depth, size, name):
+            '''Helper used to create a passthrough layer.
+
+            This is when a conv layer from earlier in the network
+            is concatenated to a later layer'''
             b = conv_layer(b, filters, depth, name)
             b = tf.space_to_depth(b, size)
             y = tf.concat([a, b], axis=3)
 
             return y
 
+        # The main network
         with tf.variable_scope('Network', reuse=tf.AUTO_REUSE):
             cur_in = conv_layer(self.images_in, 32, 3, 'conv1')
             cur_in = pool_layer(cur_in, 2, 2, 'maxpool1')
@@ -172,6 +169,7 @@ class Yolo(object):
             cur_in = conv_layer(cur_in, 1024, 3, 'conv22')
             cur_in = conv_layer(cur_in, BOX * (4 + 1 + CLASSES), 1, 'conv23')
 
+            # Reshape to the exact size we expect the YOLO output to be
             y = tf.reshape(
                 cur_in,
                 shape=(-1, GRID_H, GRID_W, BOX, 4 + 1 + CLASSES),
@@ -180,12 +178,20 @@ class Yolo(object):
             return y
 
     def _build_loss(self):
+        '''Build the loss.'''
         with tf.variable_scope('Loss', reuse=tf.AUTO_REUSE):
+            # Array of bounding boxes, [batch, num_boxes, 4]
             bboxes = self.bboxes_in
+
+            # The true output. In the same shape as the network output
             y_true = self.y_true
+
+            # The output of the network [batch, grid_x, grid_y, 5, 4 + 1 + 20]
             y_pred = self.model
 
             batch_size = tf.shape(self.bboxes_in)[0]
+
+            # Get just the boxes in the shape we need
             true_boxes = bboxes[..., 0:4]
             true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
 
@@ -302,19 +308,6 @@ class Yolo(object):
             class_mask = y_true[..., 4] * tf.gather(
                 CLASS_WEIGHTS, true_box_class) * CLASS_SCALE
 
-            ###
-            # Warm up training
-            ###
-            # no_boxes_mask = tf.to_float(coord_mask < COORD_SCALE / 2.)
-
-            # true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(self.global_step, WARM_UP_BATCHES),
-            #               lambda: [true_box_xy + (0.5 + cell_grid) * no_boxes_mask,
-            #                        true_box_wh + tf.ones_like(true_box_wh) * np.reshape(YOLO_ANCHORS, [1,1,1,BOX,2]) * no_boxes_mask,
-            #                        tf.ones_like(coord_mask)],
-            #               lambda: [true_box_xy,
-            #                        true_box_wh,
-            #                        coord_mask])
-
             # Finalize the loss
             nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
             nb_conf_box = tf.reduce_sum(tf.to_float(conf_mask > 0.0))
@@ -389,15 +382,11 @@ class Yolo(object):
         self.summary_va = tf.summary.FileWriter(
             os.path.join(self.config.log_dir, 'valid'))
 
-        # Create savers (one for current, one for best)
+        # Create savers
         self.saver_cur = tf.train.Saver()
-        # self.saver_best = tf.train.Saver()
 
         # # Save file for the current model
         self.save_file_cur = os.path.join(self.config.log_dir, 'model')
-
-        # # Save file for the best model
-        # self.save_file_best = os.path.join(self.config.save_dir, 'model')
 
     def train(self):
         print('\n--- Training')
@@ -414,12 +403,9 @@ class Yolo(object):
             self.summary_tr.add_graph(sess.graph)
 
             sess.run(tf.global_variables_initializer())
-            # sess.run([
-            #     tf.local_variables_initializer(),
-            #     tf.global_variables_initializer()
-            # ])
             threads = tf.train.start_queue_runners(sess, coord=coord)
 
+            # Restore the network if we can and want
             latest_checkpoint = tf.train.latest_checkpoint(self.config.log_dir)
             b_resume = latest_checkpoint is not None and self.config.allow_restore
             if b_resume:
@@ -473,25 +459,6 @@ class Yolo(object):
                         write_meta_graph=True,
                         write_state=True)
 
-                # print('\n\n--- Loss')
-                # print(res['loss'])
-
-                # print('\n\n--- Loss Shape')
-                # print(res['loss'].shape)
-
-                # print(res)
-                # print(res[:, 0])
-
-                # image = images_tr[0]
-                # boxes = bboxes_tr[0]
-
-                # print(boxes)
-
-                # netout = preprocess_true_boxes(boxes)
-                # boxes = decode_netout(netout)
-                # image = draw_boxes(image, boxes)
-                # save_image(image, 'test.jpeg')
-
                 if idx_epoch == 0 or idx_epoch % self.config.val_freq == 0:
                     images_va, bboxes_va, y_true_va = sess.run(self.batch_va)
 
@@ -521,9 +488,6 @@ class Yolo(object):
                     image_combined = combine_images([image_true, image_pred])
                     image_combined.save(
                         'eval_images/{}.jpeg'.format(idx_epoch))
-
-                    #     if self.config.print_boxes:
-                    #         print(res['best_boxes'])
 
                     self.summary_va.add_summary(res['summary'],
                                                 res['global_step'])

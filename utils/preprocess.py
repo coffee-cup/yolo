@@ -25,12 +25,6 @@ def process_bboxes_and_labels(bboxes, labels):
     width = xmax - xmin
     height = ymax - ymin
 
-    # Scale to grid
-    # center_x *= GRID_W
-    # center_y *= GRID_H
-    # width *= GRID_W
-    # height *= GRID_H
-
     labels = tf.cast(tf.reshape(labels, (-1, 1)), tf.float32)
     bboxes_labels = tf.concat([center_x, center_y, width, height, labels], 1)
 
@@ -38,7 +32,7 @@ def process_bboxes_and_labels(bboxes, labels):
 
 
 def tf_summary_image(image, bboxes, name='image'):
-    """Add image with bounding boxes to sumamry."""
+    '''Add image with bounding boxes to sumamry.'''
     image = tf.expand_dims(image, 0)
     bboxes = tf.expand_dims(bboxes, 0)
     image_with_box = tf.image.draw_bounding_boxes(image, bboxes)
@@ -50,7 +44,7 @@ def preprocess_for_train(image,
                          bboxes,
                          y_true,
                          scope='preprocessing_train'):
-    """Preprocesses the given image for training.
+    '''Preprocesses the given image for training.
     Note that the actual resizing scale is sampled from
         [`resize_size_min`, `resize_size_max`].
     Args:
@@ -63,7 +57,7 @@ def preprocess_for_train(image,
             aspect-preserving resizing.
     Returns:
         A preprocessed image.
-    """
+    '''
     with tf.name_scope(scope, [image, labels, bboxes]):
         if image.get_shape().ndims != 3:
             raise ValueError('Input must be of size [height, width, C>0]')
@@ -72,7 +66,7 @@ def preprocess_for_train(image,
         if image.dtype != tf.float32:
             image = tf.image.convert_image_dtype(image, dtype=tf.float32)
 
-        tf_summary_image(image, bboxes, 'image_with_bboxes')
+        # tf_summary_image(image, bboxes, 'image_with_bboxes')
 
         # Distort image and bounding boxes.
         # image = image
@@ -88,7 +82,7 @@ def preprocess_for_train(image,
             out_shape,
             method=tf.image.ResizeMethod.BILINEAR,
             align_corners=False)
-        tf_summary_image(image, bboxes, 'image_resized')
+        # tf_summary_image(image, bboxes, 'image_resized')
 
         # Randomly flip the image horizontally.
         image, bboxes = tf_image.random_flip_left_right(image, bboxes)
@@ -99,10 +93,6 @@ def preprocess_for_train(image,
         #     lambda x, ordering: distort_color(x, ordering, fast_mode),
         #     num_cases=4)
         # tf_summary_image(image, bboxes, 'image_color_distorted')
-
-        # Normalize to [-1, 1]
-        # image = tf.multiply(image, 1. / 127.5)
-        # image = tf.subtract(image, 1.0)
 
     bboxes_labels = process_bboxes_and_labels(bboxes, labels)
 
@@ -118,7 +108,7 @@ def preprocess_for_validation(image,
                               bboxes,
                               y_true,
                               scope='preprocessing_val'):
-    """Preprocesses the given image for validation."""
+    '''Preprocesses the given image for validation.'''
     with tf.name_scope(scope, [image, labels, bboxes]):
         if image.get_shape().ndims != 3:
             raise ValueError('Input must be of size [height, width, C>0]')

@@ -104,6 +104,16 @@ train_arg.add_argument(
     default=False,
     help='Whether or not to print train stats as it runs.')
 
+# ----------------------------------------
+# Arguments for model
+model_arg = add_argument_group("Model")
+
+model_arg.add_argument(
+    '--object_threshold',
+    type=float,
+    default=0.3,
+    help='Confidence threshold to decide if network has detected an object')
+
 
 def get_config():
     config, unparsed = parser.parse_known_args()
