@@ -104,41 +104,6 @@ train_arg.add_argument(
     default=False,
     help='Whether or not to print train stats as it runs.')
 
-# ----------------------------------------
-# Arguments for model
-model_arg = add_argument_group("Model")
-
-model_arg.add_argument(
-    "--reg_lambda", type=float, default=1e-4, help="Regularization strength")
-
-model_arg.add_argument(
-    "--num_conv_base",
-    type=int,
-    default=8,
-    help="Number of neurons in the first conv layer")
-
-model_arg.add_argument(
-    "--num_unit",
-    type=int,
-    default=64,
-    help="Number of neurons in the hidden layer")
-
-model_arg.add_argument(
-    "--num_hidden", type=int, default=0, help="Number of hidden layers")
-
-model_arg.add_argument(
-    "--num_class",
-    type=int,
-    default=10,
-    help="Number of classes in the dataset")
-
-model_arg.add_argument(
-    "--activ_type",
-    type=str,
-    default="relu",
-    choices=["relu", "tanh"],
-    help="Activation type")
-
 
 def get_config():
     config, unparsed = parser.parse_known_args()
