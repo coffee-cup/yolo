@@ -192,8 +192,8 @@ class Yolo(object):
             batch_size = tf.shape(self.bboxes_in)[0]
 
             # Get just the boxes in the shape we need
-            true_boxes = bboxes[..., 0:4]
-            true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
+            # true_boxes = bboxes[..., 0:4]
+            # true_boxes = tf.reshape(true_boxes, (batch_size, 1, 1, 1, -1, 4))
 
             mask_shape = tf.shape(y_true)[:4]
 
@@ -272,8 +272,10 @@ class Yolo(object):
             coord_mask = tf.expand_dims(y_true[..., 4], axis=-1) * COORD_SCALE
 
             # penalize predictors + penalize boxes with low IOU
-            true_xy = true_boxes[..., 0:2]
-            true_wh = true_boxes[..., 2:4]
+            # true_xy = true_boxes[..., 0:2]
+            # true_wh = true_boxes[..., 2:4]
+            true_xy = tf.reshape(true_box_xy, (batch_size, 1, 1, 1, -1, 2))
+            true_wh = tf.reshape(true_box_wh, (batch_size, 1, 1, 1, -1, 2))
 
             true_wh_half = true_wh / 2.
             true_mins = true_xy - true_wh_half
