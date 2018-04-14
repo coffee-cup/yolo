@@ -68,3 +68,8 @@ Before the spike we were only taking into account class and confidence predictio
 **Training progress will be updated here, even after the project deadline.**
 
 [Current training progress](http://ec2-34-217-209-5.us-west-2.compute.amazonaws.com:6006)
+
+## Thanks
+
+I would like to thank all of the Github repositories and blogs found by searching "Yolo" and "Yolo Tensorflow". The source was not entirely
+copied line by line, but the many found were used to guide our implementation. I wish this implementation may help others with their project one day.
