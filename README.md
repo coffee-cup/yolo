@@ -3,6 +3,8 @@
 - [Yolo9000 Paper](https://arxiv.org/pdf/1612.08242.pdf)
 - [YoloV1 Paper](https://arxiv.org/pdf/1506.02640.pdf)
 
+[The final report can be found here](https://gitlab.csc.uvic.ca/courses/201801/csc486b/final-project/group-a/term-project/blob/master/report.pdf).
+
 ## Dataset
 
 We trained on the [VOC2012 dataset](http://host.robots.ox.ac.uk/pascal/VOC/voc2012/). However the VOC2007 or any data in the same format can be used.
@@ -64,3 +66,5 @@ These predictions were not correct but the loss spiked because we started includ
 Before the spike we were only taking into account class and confidence predictions.
 
 **Training progress will be updated here, even after the project deadline.**
+
+[Current training progress](http://ec2-34-217-209-5.us-west-2.compute.amazonaws.com:6006)
