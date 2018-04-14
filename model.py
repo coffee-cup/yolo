@@ -106,8 +106,7 @@ class Yolo(object):
                     kernel_size,
                     padding='same',
                     use_bias=False,
-                    kernel_initializer=tf.truncated_normal_initializer(
-                        0.0, 0.01),
+                    kernel_initializer=tf.contrib.layers.xavier_initializer(),
                     kernel_regularizer=slim.l2_regularizer(0.0005),
                     bias_initializer=tf.zeros_initializer())
                 x = tf.layers.batch_normalization(x, training=self.training)
