@@ -64,3 +64,5 @@ These predictions were not correct but the loss spiked because we started includ
 Before the spike we were only taking into account class and confidence predictions.
 
 **Training progress will be updated here, even after the project deadline.**
+
+[Current training progress](http://ec2-34-217-209-5.us-west-2.compute.amazonaws.com:6006)
