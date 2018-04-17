@@ -73,3 +73,8 @@ Before the spike we were only taking into account class and confidence predictio
 
 I would like to thank all of the Github repositories and blogs found by searching "Yolo" and "Yolo Tensorflow". The source was not entirely
 copied line by line, but the many found were used to guide our implementation. I wish this implementation may help others with their project one day.
+
+- [keras-yolo2](https://github.com/experiencor/keras-yolo2)
+- [yolo-tf](https://github.com/ruiminshen/yolo-tf)
+- [yolov2](https://github.com/datlife/yolov2)
+- [yolo v2 tutorial](https://mlblr.com/includes/mlai/index.html#yolov2)
