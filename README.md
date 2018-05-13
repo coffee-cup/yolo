@@ -3,7 +3,7 @@
 - [Yolo9000 Paper](https://arxiv.org/pdf/1612.08242.pdf)
 - [YoloV1 Paper](https://arxiv.org/pdf/1506.02640.pdf)
 
-[The final report can be found here](https://gitlab.csc.uvic.ca/courses/201801/csc486b/final-project/group-a/term-project/blob/master/report.pdf).
+[The final report can be found here](https://github.com/coffee-cup/yolo/blob/master/report.pdf).
 
 ## Dataset
 
@@ -53,21 +53,6 @@ To evaluate how the network is doing we output an image every `config.val_freq` 
 On the left of the image is the ground truth bounding boxes. On the right is the predicted bounding boxes. An example of this is
 
 ![Eval Image Example](https://i.imgur.com/wPvVNYy.jpg)
-
-## Training Progress
-
-The network is currently still training. Progress has been made and the network is finally making bounding box predictions.
-Although fairly terrible ones. The loss after 27k iterations (31 hours) is...
-
-![Loss](https://i.imgur.com/8iI6hS2.png)
-
-The big spike in loss occurred right when the network started predicting bounding boxes with a confidence greater than 30%.
-These predictions were not correct but the loss spiked because we started including how wrong these predictions were.
-Before the spike we were only taking into account class and confidence predictions.
-
-**Training progress will be updated here, even after the project deadline.**
-
-[Current training progress](http://ec2-34-217-209-5.us-west-2.compute.amazonaws.com:6006)
 
 ## Thanks
 
